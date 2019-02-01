@@ -271,15 +271,20 @@ The bot's speech recognition is temporarily disabled while the bot is speaking. 
 
 ## Technical details
 
-The entirety of the bot's server-side logic is in `EchoWithCounterBot.cs`. Here are some high points.
+The bot's server-side logic is in `EchoWithCounterBot.cs`. Here are some high points.
 
 * There are some static constants early on that can be changed to customize the bot's stock responses to greetings and other social niceties, or to change the maximum number of search results displayed.
 
 * Sending the initial greeting ("Hello, fellow investigator!") is more tricky than it might seem at first. When a chat starts, the bot receives a `ConversationUpdate` event for itself joining the chat and another for the user. So one part of a successful greeting strategy is to ignore the bot's event and respond only to the actual user joining the chat. Also, only one instance of the bot is created for all users of the Web Chat, so we must make sure each Web Chat user has their own user ID. On top of all that, Web Chat doesn't send `ConversationUpdate` until the user sends his or her first message, so we need some way to force the chat to begin. (We'll see how we deal with the latter two issues in a bit).
 
-* Requests are processed by the method `OnTurnAsync`. This method handles responses to three kinds of user requests. First, it detects greetings and such, and responds with a canned phrase. Second, it detects cryptonyms in user requests and responds with a definition. Finally, it executes search queries against the JFK Files' Azure Search back-end. (A crytpnym is considered a search query; both the definition and searh results are returned.)
+* Requests are processed by the method `OnTurnAsync`. This method calls upon other methods to respond to four kinds of user requests. 
 
-* To turn the user's question into a suitable keyword query, we use the Text Analytics service. First we extract key phrases, tweaking the results slightly since some detected key phrases don't make good search keywords. Then we extract entities. We don't use the name of the extracted entities directly, but rather use the recognition of an entity as an indication that some part of the user's question is important. Recognized cryptonyms are also included in the keywords.
+    1. It detects users joining the chat and sends an initial greeting message.
+    1. It detects greetings, welcomes, and thank-yous, and responds with a canned phrase.
+    1. It detects cryptonyms in user requests and responds with a definition. 
+    1. It extracts keywords from user requests and executes search queries against the JFK Files' Azure Search back-end.
+
+* To turn the user's question into a suitable keyword query, we use the Text Analytics service. First we extract key phrases, tweaking the results slightly since some detected key phrases don't make good search keywords. Then we extract entities. We don't use the names of the detected entities directly, but rather use the recognition of an entity as an indication that some part of the user's question is important. Recognized cryptonyms are also included in the keywords.
 
 * In the search query code, there's a `do`/`while` loop that sends a typing indicator while the bot is performing the search. Typing indicators are a good way to let the user know the bot is still working on something for them, and is especially useful here since JFK Files queries can take several seconds. AFter the typing message is sent, the Web Chat client displays a "..." animation for three seconds, or until another message is received from the bot. If a search takes longer than three seconds, the disappearance of the typing indicator can lead to the user thinking the bot has stopped responding; they might then be surprised when the bot spits out its results later, seemingly at random. So we continue sending a typing message every two seconds while the search completes, and a final one as we begin preparing the response.
 

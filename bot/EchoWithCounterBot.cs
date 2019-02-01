@@ -127,217 +127,300 @@ namespace Microsoft.BotBuilderSamples
         /// <seealso cref="IMiddleware"/>
         public async Task OnTurnAsync(ITurnContext turnContext, CancellationToken cancellationToken)
         {
+            // member variables -- valid for this turn only
             context = turnContext;
             activity = context.Activity;
+
             var type = activity.Type;
 
-            // add bot's ID to greeted set so we don't greet it (no harm in doing it eeach time)
+            // Add bot's ID to greeted set so we don't greet it
+            // It's a HashSet so there's no harm doing it each time
             greeted.Add(activity.Recipient.Id);
 
+            // Send initial greeting on ConversationUpdate activity
+            if (type == ActivityTypes.ConversationUpdate)
+            {
+                SendInitialGreeting();
+                return;
+            }
+
+            // Process message from user on Message activity
             if (type == ActivityTypes.Message)
             {
-                // respond to greetings and social niceties
-                var question = activity.Text.ToLower();
+                var question = activity.Text;
                 logger.LogTrace($"HOOVERBOT {turnid} received message: {question}.");
 
-                if (question.Contains("welcome"))
-                {
-                    logger.LogTrace($"HOOVERBOT {turnid} responding to welcome.");
-                    SendCacheableSpeechReply(Thanks);
-                    return;
-                }
+                // handle greetings, gratitude, welcome, etc.
+                if (HandleSocialNiceties(question.ToLower())) return;
 
-                if (question.Contains("hello"))
-                {
-                    logger.LogTrace($"HOOVERBOT {turnid} responding to hello.");
-                    SendCacheableSpeechReply(Hello);
-                    return;
-                }
-
-                if (question.Contains("thank"))
-                {
-                    logger.LogTrace($"HOOVERBOT {turnid} responding to thanks.");
-                    SendCacheableSpeechReply(YoureWelcome);
-                    return;
-                }
-
-                question = activity.Text;   // back to our original value with case as user entered it
-
-                // HashSet will hold the search terms for the Azure Search query
-                // We use a hashset since we want to include each term only once
+                // create HashSet for search terms
                 var terms = new HashSet<string>();
 
-                // look for cryptomyms and send the definition of any found
-                Regex words = new Regex(@"\b(\w+)\b", RegexOptions.Compiled);
-                var crypt_found = false;
-                foreach (Match match in words.Matches(question))
-                {
-                    var word = match.Groups[0].Value;
-                    var upperword = word.ToUpper();
-                    if (cryptonyms.ContainsKey(upperword))
-                    {
-                        // uppercase cryptonym in the question
-                        question = new Regex("\\b" + word + "\\b").Replace(question, upperword);
-                        terms.Add(upperword);       // add them to our Azure Search terms
-                        SendSpeechReply($"**{upperword}**: {cryptonyms[upperword]}", cryptonyms[upperword]);
-                        crypt_found = true;
-                    }
-                }
+                // handle cryptonyms, sending a definition and adding them to our search terms
+                terms.UnionWith(ExtractAndDefineCryptonyms(question));
+                var crypt_found = terms.Count > 0;
 
-                logger.LogTrace($"HOOVERBOT {turnid} found cryptonyms {string.Join(" ", terms)}.");
+                // extract search keywords from question and add them to search terms
+                terms.UnionWith(await ExtractKeywords(question));
 
-                // use Text Analytics to get key phrases and entities from the question, which will become the search query
-                // we will use the same Text Analytics query for both key words and entities
-                var doc = new MultiLanguageBatchInput(
-                    new List<MultiLanguageInput>()
-                    {
-                        new MultiLanguageInput("en", "0", question),
-                    });
-
-                // do the Text Analytics requests asynchronously so both can proceed at the same time
-                logger.LogTrace($"HOOVERBOT {turnid} making Text Analytics requests.");
-                var t_keyphrases = textAnalyticsClient.KeyPhrasesAsync(doc);
-                var t_entities = textAnalyticsClient.EntitiesAsync(doc);
-                var keyphrases = await t_keyphrases;
-                var entities = await t_entities;
-                logger.LogTrace($"HOOVERBOT {turnid} received Text Analytics responses.");
-
-                // build up the query string using the results from the Text Analytics queries
-
-                // PROCESS KEY PHRASES
-                // we'll tweak the returned key phrases as they are not exactly what we want for a search
-                // any term of form "-ing of X" (e.g. "meaning of GPIDEAL") will be skipped since this is probably a cryptonym we've already handled
-                // words ending in 's or ' (e.g. "Kennedy's") will have their possessive removed
-                // words ending in -ment or -ion will be omitted entirely; these are often recognized as parts of keywords but usually are not useful search terms
-                foreach (var phrase in keyphrases.Documents[0].KeyPhrases)
-                {
-                    logger.LogTrace($"HOOVERBOT {turnid} processing Key Phrase: {phrase}");
-                    if (!phrase.Contains("ing of "))
-                    {
-                        foreach (var word in phrase.Split())
-                        {
-                            if (word.EndsWith("'s"))
-                            {
-                                terms.Add(word.TrimEnd('s').TrimEnd('\''));
-                            }
-                            else if (word.EndsWith("'"))
-                            {
-                                terms.Add(word.TrimEnd('\''));
-                            }
-                            else if (!word.EndsWith("ment") && !word.EndsWith("ion"))
-                            {
-                                terms.Add(word);
-                            }
-                        }
-                    }
-                }
-
-                // PROCESS ENTITIES
-                // we don't directly use the names of recognized entities. instead, we use the term from the user's query that was recognized as an entity.
-                // that is, if they entered Oswald, the recognized entiity is Lee Harvey Oswald, but we add the user's term, JFK, to the query.
-                // in other words, certain words beinga recognized as entities simply tells us they're important to search for, but we still search for what the user entered.
-                foreach (var entity in entities.Documents[0].Entities)
-                {
-                    logger.LogTrace($"HOOVERBOT {turnid} processing Entity: {entity.Name}");
-                    foreach (var match in entity.Matches)
-                    {
-                        logger.LogTrace($"HOOVERBOT {turnid} Entity {entity.Name} derived from: {match.Text}");
-                        terms.UnionWith(match.Text.Split());
-                    }
-                }
-
+                // Build the search term
                 var query = string.Join(" ", terms).Trim();
-                var displayquery = query;
 
                 // if we failed to build a search, punt back to the user's original query
                 if (query == string.Empty)
                 {
-                    displayquery = query = question;
+                    query = question;
                 }
 
-                // initiate the search
-                var parameters = new SearchParameters() { Top = MaxResults };   // get top n results
-                var search = searchClient.Documents.SearchAsync(query, parameters);
-                logger.LogTrace($"HOOVERBOT {turnid} searching JFK Files for derived query: {query}");
+                // Perform Azure search of the JFK Files documents
+                var results = await PerformSearch(query);
 
-                // send typing indicator every 2 sec while we wait for search to complete
-                do
-                {
-                    SendTypingIndicator();
-                }
-                while (!search.Wait(2000));
-
-                var results = search.Result.Results;
-                SendTypingIndicator();  // to cover building and sending the response
                 logger.LogTrace($"HOOVERBOT {turnid} received {results.Count} search results");
+                SendTypingIndicator();  // to cover building and sending the response
 
-                // create a reply
-                var reply = activity.CreateReply();
-                reply.Attachments = new List<Attachment>();
+                // Build a reply with the search results
+                var reply = BuildResultsReply(results, query, crypt_found);
 
-                foreach (var result in results)
+                // send the reply if we have search results OR if we didn't find a cryptonym
+                // if we found a cryptonym but no search results, no need to send "no results"
+                // (the cryptonym hit IS a result, and the user will find "no results" puzzling)
+                if (reply.Attachments.Count > 1 || !crypt_found)
                 {
-                    // get enrichment data from search result (and parse the JSON data)
-                    var enriched = JObject.Parse((string)result.Document["enriched"]);
+                    reply.Properties["cache-speech"] = true;    // allows client to retain speech audio
+                    context.SendActivityAsync(reply);
+                    logger.LogTrace($"HOOVERBOT {turnid} sent search response");
+                }
+            }
 
-                    // all results should have thumbnail images, but just in case, look before leaping
-                    if (enriched.TryGetValue("/document/normalized_images/*/imageStoreUri", out var images))
+        }
+
+        //
+        // METHODS for processing the user's question, performing a search, and sending a reply
+        //
+
+        // Respond to greetings and social niceties.
+        // return value indicates whether message was handled (so we can bail out early)
+        private bool HandleSocialNiceties(string question)
+        {
+            if (question.Contains("welcome"))
+            {
+                logger.LogTrace($"HOOVERBOT {turnid} responding to welcome.");
+                SendCacheableSpeechReply(Thanks);
+                return true;
+            }
+
+            if (question.Contains("hello"))
+            {
+                logger.LogTrace($"HOOVERBOT {turnid} responding to hello.");
+                SendCacheableSpeechReply(Hello);
+                return true;
+            }
+
+            if (question.Contains("thank"))
+            {
+                logger.LogTrace($"HOOVERBOT {turnid} responding to thanks.");
+                SendCacheableSpeechReply(YoureWelcome);
+                return true;
+            }
+
+            return false;
+        }
+
+        // Extract cryptonyms fom the user's question.
+        // These are added to the search query and a definition is sent for each.
+        private HashSet<string> ExtractAndDefineCryptonyms(string question)
+        {
+            var terms = new HashSet<string>();
+
+            // look for cryptomyms and send the definition of any found
+            Regex words = new Regex(@"\b(\w+)\b", RegexOptions.Compiled);
+            foreach (Match match in words.Matches(question))
+            {
+                var word = match.Groups[0].Value;
+                var upperword = word.ToUpper();
+                if (cryptonyms.ContainsKey(upperword))
+                {
+                    // uppercase cryptonym in the question
+                    question = new Regex("\\b" + word + "\\b").Replace(question, upperword);
+                    terms.Add(upperword);       // add them to our Azure Search terms
+                    SendSpeechReply($"**{upperword}**: {cryptonyms[upperword]}", cryptonyms[upperword]);
+                }
+            }
+
+            logger.LogTrace($"HOOVERBOT {turnid} found cryptonyms {string.Join(" ", terms)}.");
+            return terms;
+        }
+
+        // Extract search keywords from the user's question using the Text Analytics service
+        // Both Key Phrases and Entities are extracted
+        private async Task<HashSet<string>> ExtractKeywords(string question)
+        {
+            var terms = new HashSet<string>();
+            
+            // use Text Analytics to get key phrases and entities from the question, which will become the search query
+            // we will use the same Text Analytics query for both key words and entities
+            var doc = new MultiLanguageBatchInput(
+                new List<MultiLanguageInput>()
+                {
+                    new MultiLanguageInput("en", "0", question),
+                });
+
+            // do the Text Analytics requests asynchronously so both can proceed at the same time
+            logger.LogTrace($"HOOVERBOT {turnid} making Text Analytics requests.");
+            var t_keyphrases = textAnalyticsClient.KeyPhrasesAsync(doc);
+            var t_entities = textAnalyticsClient.EntitiesAsync(doc);
+            var keyphrases = await t_keyphrases;
+            var entities = await t_entities;
+            logger.LogTrace($"HOOVERBOT {turnid} received Text Analytics responses.");
+
+            // we'll tweak the returned key phrases as they are not exactly what we want for a search
+            // any term of form "-ing of X" (e.g. "meaning of GPIDEAL") will be skipped since this is probably a cryptonym we've already handled
+            // words ending in 's or ' (e.g. "Kennedy's") will have their possessive removed
+            // words ending in -ment or -ion will be omitted entirely; these are often recognized as parts of keywords but usually are not useful search terms
+            foreach (var phrase in keyphrases.Documents[0].KeyPhrases)
+            {
+                logger.LogTrace($"HOOVERBOT {turnid} processing Key Phrase: {phrase}");
+                if (!phrase.Contains("ing of "))
+                {
+                    foreach (var word in phrase.Split())
                     {
-                        // get URI of thumbnail of first content page
-                        // if the document has multiple pages, first page is an identification form
-                        // and so the second page is the first page of interest; use its thumbnail
-                        var thumbs = new List<string>(images.Values<string>());
-                        var picurl = thumbs[thumbs.Count > 1 ? 1 : 0];
-
-                        // get valid URL of original document (combine path and token)
-                        var document = enriched["/document"];
-                        var filename = document["metadata_storage_path"].Value<string>();
-                        var token = document["metadata_storage_sas_token"].Value<string>();
-                        var docurl = $"{filename}?{token}";
-
-                        logger.LogTrace($"HOOVERBOT {turnid} added search result to response: {docurl}");
-
-                        // Get the text from the document. This includes OCR'd printed and
-                        // handwritten text, people recognized in photos, and more.
-                        // As with the image, try to get the second page's text if it's multi-page
-                        var text = enriched["/document/finalText"].Value<string>();
-                        if (thumbs.Count > 1)
+                        if (word.EndsWith("'s"))
                         {
-                            var sep = "[image: image1.tif]";
-                            var page2 = text.IndexOf(sep);
-                            text = page2 > 0 ? text.Substring(page2 + sep.Length) : text;
+                            terms.Add(word.TrimEnd('s').TrimEnd('\''));
                         }
-
-                        // create card for this search result and attach it to the reply
-                        var card = new ResultCard(picurl, text, docurl);
-                        reply.Attachments.Add(card.ToAttachment());
+                        else if (word.EndsWith("'"))
+                        {
+                            terms.Add(word.TrimEnd('\''));
+                        }
+                        else if (!word.EndsWith("ment") && !word.EndsWith("ion"))
+                        {
+                            terms.Add(word);
+                        }
                     }
                 }
+            }
 
-                // Add text describing results, if any
-                if (reply.Attachments.Count == 0)
+            // we don't directly use the names of recognized entities. instead, we use the term from the user's query that was recognized as an entity.
+            // that is, if they entered Oswald, the recognized entiity is Lee Harvey Oswald, but we add the user's term, JFK, to the query.
+            // in other words, certain words beinga recognized as entities simply tells us they're important to search for, but we still search for what the user entered.
+            foreach (var entity in entities.Documents[0].Entities)
+            {
+                logger.LogTrace($"HOOVERBOT {turnid} processing Entity: {entity.Name}");
+                foreach (var match in entity.Matches)
                 {
-                    reply.Text = $"Sorry, I didn't find any documents matching __{displayquery}__.";
-                    reply.Speak = "Sorry, I didn't find any documents about that.";
+                    logger.LogTrace($"HOOVERBOT {turnid} Entity {entity.Name} derived from: {match.Text}");
+                    terms.UnionWith(match.Text.Split());
                 }
-                else
+            }
+
+            return terms;
+        }
+
+        // Perform a search (send a typing indicator every 2 seconds while waiting for results)
+        private async Task<IList<SearchResult>> PerformSearch(string query)
+        {
+            // initiate the search
+            var parameters = new SearchParameters() { Top = MaxResults };   // get top n results
+            var search = searchClient.Documents.SearchAsync(query, parameters);
+            logger.LogTrace($"HOOVERBOT {turnid} searching JFK Files for derived query: {query}");
+
+            // send typing indicator every 2 sec while we wait for search to complete
+            do
+            {
+                SendTypingIndicator();
+            }
+            while (!search.Wait(2000));
+
+            return search.Result.Results;
+         }
+
+        // Build a custom carousel reply with a card for each search result
+        // The card displays a thumbnail image of the document and a brief text excerpt
+        private Activity BuildResultsReply(IList<SearchResult> results, string query, bool crypt_found)
+        {
+            // create a reply
+            var reply = activity.CreateReply();
+            reply.Attachments = new List<Attachment>();
+
+            foreach (var result in results)
+            {
+                // get enrichment data from search result (and parse the JSON data)
+                var enriched = JObject.Parse((string)result.Document["enriched"]);
+
+                // all results should have thumbnail images, but just in case, look before leaping
+                if (enriched.TryGetValue("/document/normalized_images/*/imageStoreUri", out var images))
                 {
-                    var documents = reply.Attachments.Count > 1 ? "some documents" : "a document";
-                    reply.Text = $"I found {documents} about **{displayquery}** you may be interested in.";
-                    reply.Speak = $"I found {documents} you may be interested in.";
-                    if (crypt_found)
+                    // Get URI of thumbnail of first content page.
+                    // If the document has multiple pages, first page is an identification form
+                    // and so the second page is the first page of interest; use its thumbnail
+                    var thumbs = new List<string>(images.Values<string>());
+                    var picurl = thumbs[thumbs.Count > 1 ? 1 : 0];
+
+                    // get valid URL of original document (combine path and token)
+                    var document = enriched["/document"];
+                    var filename = document["metadata_storage_path"].Value<string>();
+                    var token = document["metadata_storage_sas_token"].Value<string>();
+                    var docurl = $"{filename}?{token}";
+
+                    logger.LogTrace($"HOOVERBOT {turnid} added search result to response: {docurl}");
+
+                    // Get the text from the document. This includes OCR'd printed and
+                    // handwritten text, people recognized in photos, and more.
+                    // As with the image, try to get the second page's text if it's multi-page
+                    var text = enriched["/document/finalText"].Value<string>();
+                    if (thumbs.Count > 1)
                     {
-                        reply.Speak = "Also, " + reply.Speak;
+                        var sep = "[image: image1.tif]";
+                        var page2 = text.IndexOf(sep);
+                        text = page2 > 0 ? text.Substring(page2 + sep.Length) : text;
                     }
 
-                    reply.Properties["cache-speech"] = true;
-                    reply.AttachmentLayout = AttachmentLayoutTypes.Carousel;
+                    // create card for this search result and attach it to the reply
+                    var card = new ResultCard(picurl, text, docurl);
+                    reply.Attachments.Add(card.ToAttachment());
+                }
+            }
 
-                    // add "Dig Deeper" button
-                    var searchlink = searchUrl + System.Uri.EscapeDataString(query);
-                    reply.SuggestedActions = new SuggestedActions()
-                    {
-                        Actions = new List<CardAction>()
+            DescribeResultsReply(reply, query, crypt_found);
+            AddDigDeeperButton(reply, query);
+            return reply;
+
+        }
+
+        // Add a text element describing the results from the search, if any.
+        private void DescribeResultsReply(Activity reply, string query, bool crypt_found)
+        {
+
+            // Add text describing results, if any
+            if (reply.Attachments.Count == 0)
+            {
+                reply.Text = $"Sorry, I didn't find any documents matching **{query}**.";
+                reply.Speak = "Sorry, I didn't find any documents about that.";
+            }
+            else
+            {
+                var documents = reply.Attachments.Count > 1 ? "some documents" : "a document";
+                reply.Text = $"I found {documents} about **{query}** you may be interested in.";
+                reply.Speak = $"I found {documents} you may be interested in.";
+                if (crypt_found)
+                {
+                    reply.Speak = "Also, " + reply.Speak;
+                }
+
+                reply.Properties["cache-speech"] = true;
+                reply.AttachmentLayout = AttachmentLayoutTypes.Carousel;
+            }
+        }
+
+        // Add a "Dig Deeper" button to the search results reply
+        // Users can click this button to search on the JFK Files Web site
+        private void AddDigDeeperButton(Activity reply, string query)
+        {
+            // add "Dig Deeper" button
+            var searchlink = searchUrl + System.Uri.EscapeDataString(query);
+            reply.SuggestedActions = new SuggestedActions()
+            {
+                Actions = new List<CardAction>()
                         {
                             new CardAction()
                             {
@@ -346,44 +429,35 @@ namespace Microsoft.BotBuilderSamples
                                 Value = searchlink,
                             },
                         },
-                    };
-                    logger.LogTrace($"HOOVERBOT {turnid} added Dig Deeper {searchlink}");
-                }
+            };
+            logger.LogTrace($"HOOVERBOT {turnid} added Dig Deeper {searchlink}");
+        }
 
-                // send the reply if we have search results OR if we didn't find a cryptonym
-                // if we found a cryptonym but no search results, no need to send "no results"
-                // (the cryptonym hit IS a result, and the user will find "no results" puzzling)
-                if (reply.Attachments.Count > 1 || !crypt_found)
-                {
-                    reply.Properties["cache-speech"] = true;
-                    context.SendActivityAsync(reply);
-                    logger.LogTrace($"HOOVERBOT {turnid} sent search response");
-                }
-            }
-
-            // Send initial greeting
-            // Each user in the chat (including the bot) is added via a ConversationUpdate message
-            // Check each user to make sure it's not the bot before greeting, and only greet each user once
-            else if (type == ActivityTypes.ConversationUpdate)
+        // Send initial greeting
+        // Each user in the chat (including the bot) is added via a ConversationUpdate message.
+        // Check each user to make sure it's not the bot before greeting, and only greet each user once
+        private async void SendInitialGreeting()
+        {
+            if (activity.MembersAdded != null)
             {
-                if (activity.MembersAdded != null)
+                foreach (var member in activity.MembersAdded)
                 {
-                    foreach (var member in activity.MembersAdded)
+                    if (!greeted.Contains(member.Id))
                     {
-                        if (!greeted.Contains(member.Id))
-                        {
-                            SendTextOnlyReply(Greeting);
-                            greeted.Add(member.Id);
-                            logger.LogTrace($"HOOVERBOT {turnid} greeted user: {member.Name} {member.Id}");
-                            break;
-                        }
+                        SendTextOnlyReply(Greeting);
+                        greeted.Add(member.Id);
+                        logger.LogTrace($"HOOVERBOT {turnid} greeted user: {member.Name} {member.Id}");
                     }
                 }
             }
-        }
+        }   
+
+        //
+        // HELPER METHODS for sending replies
+        //
 
         // Send a text-only reply (no speech)
-        private void SendTextOnlyReply(string text, string speech = null)
+        private async void SendTextOnlyReply(string text, string speech = null)
         {
             var reply = activity.CreateReply();
             reply.Text = text;
@@ -392,7 +466,7 @@ namespace Microsoft.BotBuilderSamples
         }
 
         // Send a reply with a speak attribute so it will be spoken by the client
-        private void SendSpeechReply(string text, string speech = null)
+        private async void SendSpeechReply(string text, string speech = null)
         {
             var reply = activity.CreateReply();
             reply.Text = text;
@@ -404,7 +478,7 @@ namespace Microsoft.BotBuilderSamples
         // Send a reply with a speak attribute so it will be spoken by the client
         // Also include a value attribute indicating that the speech may be cached
         // Common boilerplate replies are good candidates for caching
-        private void SendCacheableSpeechReply(string text, string speech = null)
+        private async void SendCacheableSpeechReply(string text, string speech = null)
         {
             var reply = activity.CreateReply();
             reply.Text = text;
@@ -417,7 +491,7 @@ namespace Microsoft.BotBuilderSamples
         // Send a typing indicator while other work (e.g. database search) is in progress.
         // A single typing indicator message keeps the "..." animation visible for up to three seconds
         // or until next message is received by the client.
-        private void SendTypingIndicator()
+        private async void SendTypingIndicator()
         {
             var typing = activity.CreateReply();
             typing.Type = ActivityTypes.Typing;
@@ -425,7 +499,10 @@ namespace Microsoft.BotBuilderSamples
             logger.LogTrace($"HOOVERBOT {turnid} sent typing indicator");
         }
 
-        // Result card layout using a simple adaptive layout
+        //
+        // RESULT CARD layout class
+        //
+
         private class ResultCard : AdaptiveCard
         {
             private int maxlen = 200;

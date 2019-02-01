@@ -323,7 +323,7 @@ A: Another precaution taken by browser makers to protect users from malicious co
 
 A: Make sure you are prefacing each request with "Mr. Hoover." Make sure your audio quality is good (record yourself saying something using Windows' Voice Recorder app, for example). 
 
-Finally, check the browser's console (press F12 in Chrome or Edge, or Control-Shift-K in Firefox) while toggling speech on. If your browser can't access the microphone, an `NotAllawod` error message or similar appears in the browser console. Make sure your browser's settings grant it access to the microphone.
+Finally, check the browser's console (press F12 in Chrome or Edge, or Control-Shift-K in Firefox) while toggling speech on. If your browser can't access the microphone, an `NotAllowed` error message or similar appears in the browser console. Make sure your browser's settings grant it access to the microphone.
 
 ### Q: The bot doesn't respond, or tells me something seems to have gone wrong.
 

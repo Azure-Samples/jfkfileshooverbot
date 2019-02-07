@@ -14,7 +14,7 @@ Using the same database as the JFK Files, the Hoover Bot lets you ask a bot base
 
 The Hoover Bot is a single-page Web app that works in any modern browser. We've tested it in current versions of Microsoft Edge, Mozilla Firefox, and Google Chrome.
 
-The Hovoer Bot requires a subscription to the following Microsoft Azure Cognitive Services. A trial or regular free-tier subscription is fine.
+The Hoover Bot requires a subscription to the following Microsoft Azure Cognitive Services. A trial or regular free-tier subscription is fine.
 
 * Azure Bot Service: provides the chat-room-like conversational framework.
 * Text Analytics: extracts key phrases from user questions for use in search queries.
@@ -26,7 +26,7 @@ The Hovoer Bot requires a subscription to the following Microsoft Azure Cognitiv
 
 ## Prerequisites
 
-You will need a Microsoft Azure account, along with subscriptions to the Azure Bot Service, the Text Analytics service, and the Speech Service. Trial or free-tier subscriptions to these services are sufficient. Visual Studio 2017 is also requiredm; the free Community Edition is fine.
+You will need a Microsoft Azure account, along with subscriptions to the Azure Bot Service, the Text Analytics service, and the Speech Service. Trial or free-tier subscriptions to these services are sufficient. Visual Studio 2017 is also required; the free Community Edition is fine.
 
 The JFK Files is a separate application with a database backend powered by Azure Search. You can find its repository here.
 
@@ -157,7 +157,7 @@ To make publishing easier the next time, save your deployment password. Click **
 
 ## Adding voice input and output
 
-It is straightforward to add speech recognition and voice repsonse to Web Chat's integration with the Azure Speech Service. However, at this time, this integration does not support custom speech models or voices, both of which we use in our bot.
+It is straightforward to add speech recognition and voice response Web Chat using its integration with the Azure Speech Service. However, at this time, this integration does not support custom speech models or voices, both of which we use in our bot.
 
 * A custom language model helps assure that the bot recognizes the cryptonyms (code names) used for certain persons, programs, and events.
 
@@ -203,23 +203,23 @@ To create your custom voice using this data set:
 
     Enter the name and description as requested, then click **Create**.
 
-It takes a momemnt to create the new endpoint. You'll find the URL next to the endpoint on the Endpoints page. Take note of it; we'll need it in the Hoover bot Web app.
+It takes a moment to create the new endpoint. You'll find the URL next to the endpoint on the Endpoints page. Take note of it; we'll need it in the Hoover bot Web app.
 
 For full details on the uploading and training process, see [Creating custom voice fonts](https://docs.microsoft.com/azure/cognitive-services/speech-service/how-to-customize-voice-font).
 
 ### Customizing Speech Recognition
 
-The JFK assassination documents include a number of terms not found in everyday English. Chief among these are the cryptonyms (code names) representing various persons, operations, locations, events, and even categories of secrecy. The cryptonym for Lee harvey Oswald, for example, is GPLOOR. It's important that when the user speaks "g p floor" that it's recognized as the cryptonym GPFLOOR so that it can be successfully used in a query. This can be done by customizing the *pronunciation model* of the speech-to-text function of the Speech service.
+The JFK assassination documents include a number of terms not found in everyday English. Chief among these are the cryptonyms (code names) representing various persons, operations, locations, events, and even categories of secrecy. The cryptonym for Lee Harvey Oswald, for example, is GPLOOR. It's important that when the user speaks "g p floor" that it's recognized as the cryptonym GPFLOOR so that it can be successfully used in a query. This can be done by customizing the *pronunciation model* of the speech-to-text function of the Speech service.
 
-The pronunciation data to be submitted to the Custom Speech portal is a simple UTF-8 or ASCII text file containing the "dislpay form" of the term ("GPFLOOR" in this case), a tab character (code point 9), and the pronunciation of the term (here, "g p floor").
+The pronunciation data to be submitted to the Custom Speech portal is a simple UTF-8 or ASCII text file containing the "display form" of the term ("GPFLOOR" in this case), a tab character (code point 9), and the pronunciation of the term (here, "g p floor").
 
-There are hundreds of known CIA cryptonyms. Fortunately, the JFK Files search demo includes a list of them, along with a description of each, in the `CryptonymLinker` skill for Cognitive Search. We have converted this list to the format required by the Custom Speech portal, removed the descriptions, and added the pronunciation of each term. The resulting file is included here as `cryptonyms.txt` in the `speech` folder. (Not to be confused with `cryptonyms.json` in the `bot` folder, which contains definitions of each term and is used by the bot's back-end to send back definitions of cryptonyms.)
+There are hundreds of known CIA cryptonyms. Fortunately, the JFK Files search demo includes a list of them, along with a description of each, in the `CryptonymLinker` skill for Cognitive Search. We have converted this list to the format required by the Custom Speech portal, removed the descriptions, and added the pronunciation of each term. The resulting file is included here as `cryptonyms.txt` in the `speech` folder. (Not to be confused with `cryptonyms.json` in the `bot` folder, which contains the definitions for use by the bot's back-end to send back definitions of cryptonyms.)
 
 Some cryptonyms are regular English words, like ZIPPER. There are still included in the pronunciation data because they should appear in their all-uppercase form when recognized. We've also included "JFK," which is not a cryptonym, but should be recognized as a single word.
 
-**TIP** Pronunciations are given priority based on their order in the pronunciation file. To prevent shorter cryptonyms from being recognized prematurely when a cryptomym begins with a prefix that is itself a cryptonym, (e.g. recognizing "GP" instead of "GPFLOOR", then recognizing "floor" sepaately as a regular English word), we sorted the pronunciation file in reverse alphabetical order. This way, GPFLOOR comes before GP, and has priority over GP in recognition.
+**TIP** Pronunciations are given priority based on their order in the pronunciation file. To prevent shorter cryptonyms from being recognized prematurely when a cryptomym begins with a prefix that is itself a cryptonym, (e.g. recognizing "GP" instead of "GPFLOOR", then recognizing "floor" separately as a regular English word), we sorted the pronunciation file in reverse alphabetical order. This way, GPFLOOR comes before GP, and has priority over GP in recognition.
 
-**BTW** Searching The JFK Files for "JFK" is not actually very useful, because nearly every document in the collection, even those related to other individuals, includes a cover page indicating that the document is part of the "JFK Assassination System." In some documents, a notice containing "JFK" appears on *every* page.
+**BTW** Searching the JFK Files for "JFK" is not actually very useful, because nearly every document in the collection, even those related to other individuals, includes a cover page indicating that the document is part of the "JFK Assassination System." In many documents, a notice containing "JFK" appears on *every* page.
 
 Creating a custom language model using the cryptonym pronunciation data also requires language data; you can't train a language model without both files. The language file contains phrases or sentences that are likely to be uttered by a user. The language data is treated as an addition to a base model provided by Microsoft, so it needn't be extensive. We have provided a file, `questions.txt`, consisting of a handful of sample questions that users might ask the Hoover Bot.
 
@@ -229,27 +229,27 @@ With these two files, you're ready to adapt Speech Recognition.
 
 1. Upload `cryptonyms.txt` as a pronunciation data set and `questions.txt` as a language data set to the Adaptation Data page of the Custom Speech portal. Both are in the `speech` folder of this repo.
 
-    First, click **Import** next to Language data sets, fill out the form, and attach `questions.txt`. Click **Import** to proceed.
+    First, click **Import** next to Language Data Sets, fill out the form, and attach `questions.txt`. Click **Import** to proceed.
 
     ![Import language data](images/import_language.png)
 
-    Then click **Import** next to Pronunciation data sets, fill out the form and attach `cryptonyms.txt`. Again cilck **Import** to proceed.
+    Then click **Import** next to Pronunciation Data Sets, fill out the form, and attach `cryptonyms.txt`. Again click **Import** to proceed.
 
     It takes a moment to process the new data sets. Wait until both data sets have a status of Succeeded before continuing.
 
 1. Switch to the Language Models page and click **Create New** to use these data sets to train the speech recognizer. 
  
-    ![Create language model](images/language_model.png)]
+    ![Create language model](images/language_model.png)
 
     Fill out the form as shown, choose the language and pronunciation data sets you just uploaded, and click **Create.**
 
-    Creating the language model can take a significant amount of time; you might want to do it overnight. Itt can run simultaneously with custom voice training and database indexing.
+    Creating the language model can take a significant amount of time; you might want to do it overnight. It can run simultaneously with custom voice training and database indexing.
 
 1. Create an endpoint to be used with the custom speech model by clicking **Create New** on the Endpoints page.
 
     ![Create sppeech endpoint](images/create_speech_endpoint.png)
 
-    Once more, fill out the form, choose the v3.3 Unified acoustic model and the language model you just created, and cilck **Create.**
+    Once more, fill out the form, choose the v3.3 Unified acoustic model and the language model you just created, and click **Create.**
 
     It may take a few moments to deploy the endpoint. When the endpoint's Status on the Endpoints page is Succeeded, click its Details button and scroll down to the Endpoints table to find the WebSockets (`wss://`) URL you need. You want the second one listed, the one thot supports up to 10 minutes of dictation but not punctuation.
 
@@ -267,7 +267,7 @@ For full details on the uploading and training process, see [Enable custom pronu
 
 With the bot open in the browser, you can activate the "Use speech" checkbox. After Hoover's voice greets you, you can ask him questions by addressing him as "Mr. Hoover," for example, "Mr. Hoover, what does GPFLOOR mean?"
 
-The bot's speech recognition is temporarily disabled while the bot is speaking. Rcognition turns off automatically after twenty seconds without detected speech.
+The bot's speech recognition is temporarily disabled while the bot is speaking. Recognition turns off automatically after twenty seconds without detected speech.
 
 ## Technical details
 

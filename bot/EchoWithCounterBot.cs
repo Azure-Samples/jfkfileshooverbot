@@ -53,9 +53,13 @@ namespace Microsoft.BotBuilderSamples
 
         private static ITextAnalyticsClient textAnalyticsClient;
 
+        private static string stopwords = "what who whom which what when how was does this that the mean means meaning crypt cryptonym code name word codename codeword";
+        private static HashSet<string> stopset = new HashSet<string>(stopwords.Split());
+
         private Activity activity;
         private ITurnContext context;
         private Guid turnid;
+
 
         private ILogger logger;
 
@@ -161,7 +165,7 @@ namespace Microsoft.BotBuilderSamples
                 var crypt_found = terms.Count > 0;
 
                 // extract search keywords from question and add them to search terms
-                terms.UnionWith(await ExtractKeywords(question));
+                await ExtractKeywords(question, terms);
 
                 // Build the search term
                 var query = string.Join(" ", terms).Trim();
@@ -253,10 +257,8 @@ namespace Microsoft.BotBuilderSamples
 
         // Extract search keywords from the user's question using the Text Analytics service
         // Both Key Phrases and Entities are extracted
-        private async Task<HashSet<string>> ExtractKeywords(string question)
+        private async Task<HashSet<string>> ExtractKeywords(string question, HashSet<string> terms)
         {
-            var terms = new HashSet<string>();
-            
             // use Text Analytics to get key phrases and entities from the question, which will become the search query
             // we will use the same Text Analytics query for both key words and entities
             var doc = new MultiLanguageBatchInput(
@@ -273,31 +275,32 @@ namespace Microsoft.BotBuilderSamples
             var entities = await t_entities;
             logger.LogTrace($"HOOVERBOT {turnid} received Text Analytics responses.");
 
-            // we'll tweak the returned key phrases as they are not exactly what we want for a search
-            // any term of form "-ing of X" (e.g. "meaning of GPIDEAL") will be skipped since this is probably a cryptonym we've already handled
-            // words ending in 's or ' (e.g. "Kennedy's") will have their possessive removed
-            // words ending in -ment or -ion will be omitted entirely; these are often recognized as parts of keywords but usually are not useful search terms
+            // helper function to process individual words found by Text Analytics, ignoring some
+            // * possesive words have their trailing 's or ' removed (Kenneydy's -> Kennedy)
+            // * words ending with "-ment" or "-ion" are ignored (these are often picked up by Text Analytics but have little search value)
+            // * words whose uppercase variant is already in the search terms are ignored (these are typically cryptonyms)
+            // * words of only 1 or 2 letters long are ignored
+            // * stopwords are ignored
+            void addTerm(string word)
+            {
+                if (word.EndsWith("'s"))
+                {
+                    word = word.TrimEnd('s');
+                }
+                if (word.EndsWith("'"))
+                {
+                    word = word.TrimEnd('\'');
+                }
+                if (word.Length > 2 && !(word.EndsWith("ment") || word.EndsWith("ion") || terms.Contains(word.ToUpper()) || stopset.Contains(word.ToLower())))
+                {
+                    terms.Add(word);
+                }
+            }
+
             foreach (var phrase in keyphrases.Documents[0].KeyPhrases)
             {
                 logger.LogTrace($"HOOVERBOT {turnid} processing Key Phrase: {phrase}");
-                if (!phrase.Contains("ing of "))
-                {
-                    foreach (var word in phrase.Split())
-                    {
-                        if (word.EndsWith("'s"))
-                        {
-                            terms.Add(word.TrimEnd('s').TrimEnd('\''));
-                        }
-                        else if (word.EndsWith("'"))
-                        {
-                            terms.Add(word.TrimEnd('\''));
-                        }
-                        else if (!word.EndsWith("ment") && !word.EndsWith("ion"))
-                        {
-                            terms.Add(word);
-                        }
-                    }
-                }
+                foreach (var word in phrase.Split()) addTerm(word);
             }
 
             // we don't directly use the names of recognized entities. instead, we use the term from the user's query that was recognized as an entity.
@@ -309,7 +312,7 @@ namespace Microsoft.BotBuilderSamples
                 foreach (var match in entity.Matches)
                 {
                     logger.LogTrace($"HOOVERBOT {turnid} Entity {entity.Name} derived from: {match.Text}");
-                    terms.UnionWith(match.Text.Split());
+                    foreach (var word in match.Text.Split()) addTerm(word);
                 }
             }
 
@@ -383,8 +386,8 @@ namespace Microsoft.BotBuilderSamples
 
             DescribeResultsReply(reply, query, crypt_found);
             AddDigDeeperButton(reply, query);
+            logger.LogTrace($"HOOVERBOT {turnid} added text={reply.Text} and speak={reply.Speak}");
             return reply;
-
         }
 
         // Add a text element describing the results from the search, if any.

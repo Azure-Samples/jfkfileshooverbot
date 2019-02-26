@@ -15,6 +15,7 @@ using Microsoft.Azure.Search;
 using Microsoft.Azure.Search.Models;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Schema;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Rest;
 using Newtonsoft.Json;
@@ -39,29 +40,64 @@ namespace Microsoft.BotBuilderSamples
     public class EchoWithCounterBot : IBot
     {
         private static readonly int MaxResults = 10;
+
         private static readonly string Greeting = "Welcome, investigator! I'm FBI director J. Edgar Hoover. What can I help you find?";
         private static readonly string Thanks = "Thank you, it's my pleasure to be here. What can I do for you?";
         private static readonly string Hello = "Hello! Good to meet you. What are you interested in today?";
         private static readonly string YoureWelcome = "You're most welcome. How can I assist you?";
 
-        private static readonly object InitLock = new object();
+        // stopwords (words that are never used in a search query even if used in a user's question)
+        private static string stopwords = "what who whom which what when how was does this that the mean means meaning cryptonym crypt code name word codename codeword";
+        private static HashSet<string> stopset;
 
-        private static SearchIndexClient searchClient = null;
-        private static Dictionary<string, string> cryptonyms = null;
-        private static string searchUrl = null;
+        //  set that remembers who the bot has greeted (add default-user to avoid double-greeting)
         private static HashSet<string> greeted;
 
-        private static ITextAnalyticsClient textAnalyticsClient;
+        // known cryptonyms (code names) read from JSON file
+        private static Dictionary<string, string> cryptonyms;
 
-        private static string stopwords = "what who whom which what when how was does this that the mean means meaning crypt cryptonym code name word codename codeword";
-        private static HashSet<string> stopset = new HashSet<string>(stopwords.Split());
+        // client interfaces for Cognitive Services APIs
+        private static ITextAnalyticsClient textAnalyticsClient;
+        private static ISearchIndexClient searchClient;
+
+        // search URL for your main JFK Files site instance
+        private static string searchUrl;
 
         private Activity activity;
         private ITurnContext context;
         private Guid turnid;
 
-
         private ILogger logger;
+
+        /// <summary>
+        /// Initializes the static members of the EchoWithCounterBot class
+        /// </summary>
+        static EchoWithCounterBot()
+        {
+            var config = Startup.Configuration;
+
+            var textAnalyticsKey = config.GetSection("textAnalyticsKey")?.Value;
+            var textAnalyticsEndpoint = config.GetSection("textAnalyticsEndpoint")?.Value;
+
+            textAnalyticsClient = new TextAnalyticsClient(new ApiKeyServiceClientCredentials(textAnalyticsKey))
+            {
+                Endpoint = config.GetSection("textAnalyticsEndpoint")?.Value,
+            };
+
+            var searchName = config.GetSection("searchName")?.Value;
+            var searchIndex = config.GetSection("searchIndex")?.Value;
+            var searchKey = config.GetSection("searchKey")?.Value;
+
+            searchClient = new SearchIndexClient(searchName, searchIndex, new SearchCredentials(searchKey));
+
+            stopset = new HashSet<string>(stopwords.Split());
+            greeted = new HashSet<string>() { "default-user" };
+
+            cryptonyms = JsonConvert.DeserializeObject<Dictionary<string, string>>
+                (File.ReadAllText("cia-cryptonyms.json"));
+
+            searchUrl = config.GetSection("searchUrl")?.Value;
+        }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="EchoWithCounterBot"/> class.
@@ -70,51 +106,17 @@ namespace Microsoft.BotBuilderSamples
         /// <param name="loggerFactory">A <see cref="ILoggerFactory"/> that is hooked to the Azure App Service provider.</param>
         /// <seealso cref="https://docs.microsoft.com/en-us/aspnet/core/fundamentals/logging/?view=aspnetcore-2.1#windows-eventlog-provider"/>
         public EchoWithCounterBot(EchoBotAccessors accessors, ILoggerFactory loggerFactory)
-        {
-            turnid = System.Guid.NewGuid();
-
-            if (loggerFactory == null)
             {
-                throw new System.ArgumentNullException(nameof(loggerFactory));
-            }
+                turnid = System.Guid.NewGuid();
 
-            logger = loggerFactory.CreateLogger<EchoWithCounterBot>();
-            logger.LogTrace($"HOOVERBOT {turnid} turn start.");
-
-            // avoid multiple initialization of static fields
-            // it doesn't hurt anything in this case, but it's bad practice
-            lock (InitLock)
-            {
-                if (greeted == null)
+                if (loggerFactory == null)
                 {
-                    var config = Startup.Configuration;
-
-                    var searchname = config.GetSection("searchName")?.Value;
-                    var searchkey = config.GetSection("searchKey")?.Value;
-                    var searchindex = config.GetSection("searchIndex")?.Value;
-
-                    // establish search service connection
-                    searchClient = new SearchIndexClient(searchname, searchindex, new SearchCredentials(searchkey));
-
-                    // read known cryptonyms (code names) from JSON file
-                    cryptonyms = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText("cia-cryptonyms.json"));
-
-                    // get search URL for your main JFK Files site instance
-                    searchUrl = config.GetSection("searchUrl")?.Value;
-
-                    // create Text Analytics client
-                    var textAnalyticsKey = config.GetSection("textAnalyticsKey")?.Value;
-                    var textAnalyticsEndpoint = config.GetSection("textAnalyticsEndpoint")?.Value;
-                    textAnalyticsClient = new TextAnalyticsClient(new ApiKeyServiceClientCredentials(textAnalyticsKey))
-                    {
-                        Endpoint = textAnalyticsEndpoint,
-                    };
-
-                    // create set that remembers who the bot has greeted (add default-user to avoid double-greeting)
-                    greeted = new HashSet<string>() { "default-user" };
+                    throw new System.ArgumentNullException(nameof(loggerFactory));
                 }
+
+                logger = loggerFactory.CreateLogger<EchoWithCounterBot>();
+                logger.LogTrace($"HOOVERBOT {turnid} turn start.");
             }
-        }
 
         /// <summary>
         /// Every conversation turn for our Bot will call this method.
@@ -456,38 +458,28 @@ namespace Microsoft.BotBuilderSamples
         }   
 
         //
-        // HELPER METHODS for sending replies
+        // CONVENIENCE METHODS for sending replies
         //
 
         // Send a text-only reply (no speech)
-        private async void SendTextOnlyReply(string text, string speech = null)
+        private async void SendTextOnlyReply(string text)
         {
-            var reply = activity.CreateReply();
-            reply.Text = text;
-            context.SendActivityAsync(reply);
+            _SendReply(text, null, false);
             logger.LogTrace($"HOOVERBOT {turnid} sent text-only reply: {text.Substring(0, Math.Min(50, text.Length))}");
         }
 
         // Send a reply with a speak attribute so it will be spoken by the client
-        private async void SendSpeechReply(string text, string speech = null)
+        // Optionally specify text to be spoken if it is different from the text to be displayed
+        // Optionally set caching attribute so boilerplate speech responses may be cached client-side
+        private async void SendSpeechReply(string text, string speech=null)
         {
-            var reply = activity.CreateReply();
-            reply.Text = text;
-            reply.Speak = speech == null ? text : speech;
-            context.SendActivityAsync(reply);
+            _SendReply(text, speech ?? text, false);
             logger.LogTrace($"HOOVERBOT {turnid} sent speech reply: {text.Substring(0, Math.Min(50, text.Length))}");
         }
 
-        // Send a reply with a speak attribute so it will be spoken by the client
-        // Also include a value attribute indicating that the speech may be cached
-        // Common boilerplate replies are good candidates for caching
-        private async void SendCacheableSpeechReply(string text, string speech = null)
+        private async void SendCacheableSpeechReply(string text, string speech=null)
         {
-            var reply = activity.CreateReply();
-            reply.Text = text;
-            reply.Properties["cache-speech"] = true;
-            reply.Speak = speech == null ? text : speech;
-            context.SendActivityAsync(reply);
+            _SendReply(text, speech ?? text, true);
             logger.LogTrace($"HOOVERBOT {turnid} sent cacheable speech reply: {text.Substring(0, Math.Min(50, text.Length))}");
         }
 
@@ -500,6 +492,16 @@ namespace Microsoft.BotBuilderSamples
             typing.Type = ActivityTypes.Typing;
             context.SendActivityAsync(typing);
             logger.LogTrace($"HOOVERBOT {turnid} sent typing indicator");
+        }
+
+        // Helper method called by convenience methods. Call one of those, not this one.
+        private async void _SendReply(string text, string speech, bool cacheable)
+        {
+            var reply = activity.CreateReply();
+            reply.Text = text;
+            if (speech != null && speech.Length > 0) reply.Speak = speech;
+            if (cacheable) reply.Properties["cache-speech"] = true;
+            context.SendActivityAsync(reply);
         }
 
         //

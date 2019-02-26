@@ -134,7 +134,9 @@ To create the bot on Azure:
 
 1. Copy the files from this repo's `wwwroot` folder into the Visual Studio project's `wwwroot` folder. These files contain the bot's user interface and client-side logic. Again, allow same-named files to replace existing files.
 
-1. Make sure the project builds and runs. With the project running, try your bot in the [emulator](https://docs.microsoft.com/en-us/azure/bot-service/bot-service-debug-emulator?view=azure-bot-service-4.0). Just double-click the `.bot` file in Visual Studio.
+1. Make sure the project builds and runs. Use **Build > Rebuild Solution** for your first build to make sure no traces of the original EchoWithCounterBot remain.
+
+1. With the project running, try your bot in the [emulator](https://docs.microsoft.com/en-us/azure/bot-service/bot-service-debug-emulator?view=azure-bot-service-4.0). Just double-click the `.bot` file in Visual Studio.
 
     ![Bot Emulator](images/emulator.png)
 
@@ -146,7 +148,7 @@ Running the project also opens the Web Chat app in a browser. This app connects 
 
 Azure Bot Service's Web Chat is a JavaScript component that lets you embed your bot in any Web site. We'll use it in the J. Edgar Hoover Bot Web page. 
 
-To get Web Chat to talk to your bot, you must enable the bot's Direct Line channel and provide an authentication token in the `settings.js` file in the `wwroot` folder.
+To get Web Chat to talk to your bot, you must enable the bot's Direct Line channel and provide an authentication token in the `settings.js` file in the `wwwroot` folder.
 
 1. In the Azure portal, enable Direct Line in your Web App Bot's Channels blade. 
 
@@ -164,7 +166,7 @@ To get Web Chat to talk to your bot, you must enable the bot's Direct Line chann
 
    ![Direct Line keys](images/directline_keys.png)
 
-1. Click **Show** to reveal one of your keys, then copy it and paste it into `settings.js` in place of the placeholder text. 
+1. Click **Show** to reveal one of your keys, then copy it and paste it into `settings.js` (in `wwwroot`) in place of the placeholder text. 
 
     ![bot.htm](images/bot_htm.png)
 
@@ -359,6 +361,12 @@ Speaking of speech, as previously mentioned, the Web Chat app supports the Speec
 
 The first troubleshooting step is always to double-check the keys and endpoints in `appsettings.json` and `settings.js`. The following FAQ offers additional suggestions to various issues you may encounter.
 
+### Q: I can't get my bot to work with the Bot Framework Emulator (it can't connect).
+
+A: Make sure the Visual Studio HooverBot project is running and that you are connecting by opening the project's `.bot` file in the Emulator.
+
+The Emulator's network connection may also be blocked by the Windows firewall. You can add a rule to allow connections to port 3978 (the default bot connection port).
+
 ### Q: While opening Web Chat in a browser from the local `default.htm` page and attempting to use speech, the browser frequently asks for permission to use the microphone.
 
 A: The Web Chat app turns speech recognition off and on while the bot is speaking, and also turns it off after no speech has been detected for twenty seconds. For locally-hosted files, this may cause you to be prompted repeatedly for permission to use the microphone. This behavior is a security precaution, and most browsers don't have a way to turn the warning off for locally-hosted files. Instead, while the bot is running locally (press F5 in Visual Studio), access the page through `http://localhost:3839` using Chrome. Chrome will retain the microphone permission for the session.
@@ -371,7 +379,7 @@ A: Another precaution taken by browser makers to protect users from malicious co
 
 A: Make sure you are prefacing each request with "Mr. Hoover." Make sure your audio quality is good (record yourself saying something using Windows' Voice Recorder app, for example). 
 
-Finally, check the browser's console (press F12 in Chrome or Edge, or Control-Shift-K in Firefox) while toggling speech on. If your browser can't access the microphone, an `NotAllowed` error message or similar appears in the browser console. Make sure your browser's settings grant it access to the microphone.
+Finally, check the browser's console (press F12 in Chrome or Edge, or Control-Shift-K in Firefox) while toggling speech on. If your browser can't access the microphone, a `NotAllowed` error message or similar appears in the browser console. Make sure your browser's settings grant it access to the microphone.
 
 ### Q: The bot doesn't respond, or tells me something seems to have gone wrong.
 
@@ -410,3 +418,5 @@ A: For the server-side C# application, NuGet has you covered.
 The Bot Framework JavaScript library is delivered by a CDN. Simply change the version number in the `<script>` tag's URL to the one you want, or `latest` to use the latest version. (You can also use `master` to try the latest pre-release version.)
 
 The Speech Service JavaScript library is provided as part of this project and served from the same Azure Web site that hosts the bot. [Download the latest version](https://aka.ms/csspeech/jsbrowserpackage) and copy `microsoft.cognitiveservices.speech.sdk.bundle-min.js` from the zip file into the Visual Studio project's `wwwroot` folder.
+
+Using newer libraries may require changes to the C# or JavaScript code.

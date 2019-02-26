@@ -32,11 +32,54 @@ The JFK Files is a separate application with a database backend powered by Azure
 
     https://github.com/Microsoft/AzureSearch_JFK_Files
 
-Follow the instructions in the JFK Files repo to create your own instance of the JFK Files. There's a template that will create the necessary Azure services for you. You'll need the URLs for the Azure Search service and the Web Service that were created during setup (you can also obtain these from the Azure portal if you don't catch them in the template result).
+Follow the instructions in the JFK Files repo to create your own instance of the JFK Files. There's a template that will create the necessary Azure services for you. You'll need the URLs for the Azure Search service and the Web Service that were created during setup (you can obtain these from the Azure portal if you don't catch them in the template result).
 
-Note that adding all the documents to the index may take a while. We suggest letting the JFK Files setup process run overnight. Don't worry, you can proceed with the rest of this tutorial while this is in progress. There are a couple of other long-running setup tasks for the custom speech models, and these can run at the same time as the document indexing.
+The Hoover Bot requires that the Cognitive Services enrichment data be stored in the JFK Files database. This is a debugging feature and is not enabled by default. Before initializing your JFK Files instance, edit the file `index.json` in the `JfkWebApiSkills/JfkInitializer` folder in the JFK Files project to add the `enriched` field definition.
 
-## Creating the Bot
+```javascript
+{
+  "fields": [
+    // other fields go here.
+    {
+      "name": "enriched",
+      "type": "Edm.String",
+      "searchable": false,
+      "sortable": false,
+      "filterable": false,
+      "facetable": false
+    }
+  ]
+}
+```
+
+Adding all the JFK Files documents to the index may take a while. We suggest letting the JFK Files initialization process run overnight. You can proceed with the rest of this tutorial whie the JFK Files are being initialized. There are a couple of other long-running setup tasks for the custom speech models, and these can run at the same time as the document indexing.
+
+## Architecture
+
+The Hoover Bot is built using an ordinary client-server architecture. The system consists of two main parts: a C# component that runs in the Azure cloud, and a Web Chat component that runs in the user's browser.
+
+![Hoover Bot architecture](images/architecture.png)
+
+The bot and the Web Chat communicate via the Direct Line protocol. The server-side bot component utilizes the Text Analytics service, while the client-side Web Chat component calls upon the Speech service to perform speech recognition and synthesis.
+
+A typical conversational "turn" (query and response) proceeds as follows. In the following scenario, the user has asked aloud, "Mr. Hoover, what is RYBAT?"
+
+![Example Hoover Bot turn](images/transaction.png)
+
+1. The user speaks to the bot. Audio is accepted by the Web Chat component in the browser.
+2. The Web Chat component sends the speech audio to the Speech service for recognition.
+3. The recognized speech is then sent to the server-side bot component for processing.
+4. The bot recognizes the cryptonym (code word) RYBAT in the user's query and sends back its definition.
+5. The Web Chat component displays the cryptonym definition, and also sends it to the Speech service to be synthesized into speech using a custom voice resembling that of J. Edgar Hoover.
+6. The Web Chat plays the audio definition of RYBAT.
+7. Meanhwhile, on the server side, the bot sends the user's question to the Text Analytics service to extract its key phrases.
+8. The extracted key phrases are used to construct a search query, which is then sent to the JFK Files back-end, which is an Azure Search instance.
+9. The bot builds a card for each matching document returned by Azure Search and sends these to the Web Chat client.
+10. The client displays the cards in a carousel, allowing the user to flip through the search results.
+11. The client sends the text associated with the cards to the Speech service to turn it into Hoover-speech, then plays the generated audio file.
+
+
+## Creating the bot
 
 The Hoover bot is based on the `EchoBot` template. The EchoBot simply echoes back whatever you type or say to it, along with a turn counter. We'll use only the skeleton of this bot; the guts will be replaced with code for cryptonym identification and document search. We'll add a customized Web app that includes our own CSS styles and images. Finally, we'll use custom speech and voice services to enable the bot to understand the user's spoken queries and respond using a facsimile of J. Edgar Hoover's voice.
 
@@ -91,7 +134,9 @@ To create the bot on Azure:
 
 1. Copy the files from this repo's `wwwroot` folder into the Visual Studio project's `wwwroot` folder. These files contain the bot's user interface and client-side logic. Again, allow same-named files to replace existing files.
 
-1. Make sure the project builds and runs. With the project running, try your bot in the [emulator](https://docs.microsoft.com/en-us/azure/bot-service/bot-service-debug-emulator?view=azure-bot-service-4.0). Just double-click the `.bot` file in Visual Studio.
+1. Make sure the project builds and runs. Use **Build > Rebuild Solution** for your first build to make sure no traces of the original EchoWithCounterBot remain.
+
+1. With the project running, try your bot in the [emulator](https://docs.microsoft.com/en-us/azure/bot-service/bot-service-debug-emulator?view=azure-bot-service-4.0). Just double-click the `.bot` file in Visual Studio.
 
     ![Bot Emulator](images/emulator.png)
 
@@ -103,7 +148,7 @@ Running the project also opens the Web Chat app in a browser. This app connects 
 
 Azure Bot Service's Web Chat is a JavaScript component that lets you embed your bot in any Web site. We'll use it in the J. Edgar Hoover Bot Web page. 
 
-To get Web Chat to talk to your bot, you must enable the bot's Direct Line channel and provide an authentication token in the `settings.js` file in the `wwroot` folder.
+To get Web Chat to talk to your bot, you must enable the bot's Direct Line channel and provide an authentication token in the `settings.js` file in the `wwwroot` folder.
 
 1. In the Azure portal, enable Direct Line in your Web App Bot's Channels blade. 
 
@@ -121,7 +166,7 @@ To get Web Chat to talk to your bot, you must enable the bot's Direct Line chann
 
    ![Direct Line keys](images/directline_keys.png)
 
-1. Click **Show** to reveal one of your keys, then copy it and paste it into `settings.js` in place of the placeholder text. 
+1. Click **Show** to reveal one of your keys, then copy it and paste it into `settings.js` (in `wwwroot`) in place of the placeholder text. 
 
     ![bot.htm](images/bot_htm.png)
 
@@ -316,6 +361,12 @@ Speaking of speech, as previously mentioned, the Web Chat app supports the Speec
 
 The first troubleshooting step is always to double-check the keys and endpoints in `appsettings.json` and `settings.js`. The following FAQ offers additional suggestions to various issues you may encounter.
 
+### Q: I can't get my bot to work with the Bot Framework Emulator (it can't connect).
+
+A: Make sure the Visual Studio HooverBot project is running and that you are connecting by opening the project's `.bot` file in the Emulator.
+
+The Emulator's network connection may also be blocked by the Windows firewall. You can add a rule to allow connections to port 3978 (the default bot connection port).
+
 ### Q: While opening Web Chat in a browser from the local `default.htm` page and attempting to use speech, the browser frequently asks for permission to use the microphone.
 
 A: The Web Chat app turns speech recognition off and on while the bot is speaking, and also turns it off after no speech has been detected for twenty seconds. For locally-hosted files, this may cause you to be prompted repeatedly for permission to use the microphone. This behavior is a security precaution, and most browsers don't have a way to turn the warning off for locally-hosted files. Instead, while the bot is running locally (press F5 in Visual Studio), access the page through `http://localhost:3839` using Chrome. Chrome will retain the microphone permission for the session.
@@ -328,7 +379,7 @@ A: Another precaution taken by browser makers to protect users from malicious co
 
 A: Make sure you are prefacing each request with "Mr. Hoover." Make sure your audio quality is good (record yourself saying something using Windows' Voice Recorder app, for example). 
 
-Finally, check the browser's console (press F12 in Chrome or Edge, or Control-Shift-K in Firefox) while toggling speech on. If your browser can't access the microphone, an `NotAllowed` error message or similar appears in the browser console. Make sure your browser's settings grant it access to the microphone.
+Finally, check the browser's console (press F12 in Chrome or Edge, or Control-Shift-K in Firefox) while toggling speech on. If your browser can't access the microphone, a `NotAllowed` error message or similar appears in the browser console. Make sure your browser's settings grant it access to the microphone.
 
 ### Q: The bot doesn't respond, or tells me something seems to have gone wrong.
 
@@ -367,3 +418,5 @@ A: For the server-side C# application, NuGet has you covered.
 The Bot Framework JavaScript library is delivered by a CDN. Simply change the version number in the `<script>` tag's URL to the one you want, or `latest` to use the latest version. (You can also use `master` to try the latest pre-release version.)
 
 The Speech Service JavaScript library is provided as part of this project and served from the same Azure Web site that hosts the bot. [Download the latest version](https://aka.ms/csspeech/jsbrowserpackage) and copy `microsoft.cognitiveservices.speech.sdk.bundle-min.js` from the zip file into the Visual Studio project's `wwwroot` folder.
+
+Using newer libraries may require changes to the C# or JavaScript code.

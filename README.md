@@ -32,9 +32,27 @@ The JFK Files is a separate application with a database backend powered by Azure
 
     https://github.com/Microsoft/AzureSearch_JFK_Files
 
-Follow the instructions in the JFK Files repo to create your own instance of the JFK Files. There's a template that will create the necessary Azure services for you. You'll need the URLs for the Azure Search service and the Web Service that were created during setup (you can also obtain these from the Azure portal if you don't catch them in the template result).
+Follow the instructions in the JFK Files repo to create your own instance of the JFK Files. There's a template that will create the necessary Azure services for you. You'll need the URLs for the Azure Search service and the Web Service that were created during setup (you can obtain these from the Azure portal if you don't catch them in the template result).
 
-Note that adding all the documents to the index may take a while. We suggest letting the JFK Files setup process run overnight. Don't worry, you can proceed with the rest of this tutorial while this is in progress. There are a couple of other long-running setup tasks for the custom speech models, and these can run at the same time as the document indexing.
+The Hoover Bot requires that the Cognitive Services enrichment data be stored in the JFK Files database. This is a debugging feature and is not enabled by default. Before initializing your JFK Files instance, edit the file `index.json` in the `JfkWebApiSkills/JfkInitializer` folder in the JFK Files project to add the `enriched` field definition.
+
+```javascript
+{
+  "fields": [
+    // other fields go here.
+    {
+      "name": "enriched",
+      "type": "Edm.String",
+      "searchable": false,
+      "sortable": false,
+      "filterable": false,
+      "facetable": false
+    }
+  ]
+}
+```
+
+Adding all the JFK Files documents to the index may take a while. We suggest letting the JFK Files initialization process run overnight. You can proceed with the rest of this tutorial whie the JFK Files are being initialized. There are a couple of other long-running setup tasks for the custom speech models, and these can run at the same time as the document indexing.
 
 ## Architecture
 

@@ -36,7 +36,32 @@ Follow the instructions in the JFK Files repo to create your own instance of the
 
 Note that adding all the documents to the index may take a while. We suggest letting the JFK Files setup process run overnight. Don't worry, you can proceed with the rest of this tutorial while this is in progress. There are a couple of other long-running setup tasks for the custom speech models, and these can run at the same time as the document indexing.
 
-## Creating the Bot
+## Architecture
+
+The Hoover Bot is built using an ordinary client-server architecture. The system consists of two main parts: a C# component that runs in the Azure cloud, and a Web Chat component that runs in the user's browser.
+
+![Hoover Bot architecture](images/architecture.png)
+
+The bot and the Web Chat communicate via the Direct Line protocol. The server-side bot component utilizes the Text Analytics service, while the client-side Web Chat component calls upon the Speech service to perform speech recognition and synthesis.
+
+A typical conversational "turn" (query and response) proceeds as follows. In the following scenario, the user has asked aloud, "Mr. Hoover, what is RYBAT?"
+
+![Example Hoover Bot turn](images/transaction.png)
+
+1. The user speaks to the bot. Audio is accepted by the Web Chat component in the browser.
+2. The Web Chat component sends the speech audio to the Speech service for recognition.
+3. The recognized speech is then sent to the server-side bot component for processing.
+4. The bot recognizes the cryptonym (code word) RYBAT in the user's query and sends back its definition.
+5. The Web Chat component displays the cryptonym definition, and also sends it to the Speech service to be synthesized into speech using a custom voice resembling that of J. Edgar Hoover.
+6. The Web Chat plays the audio definition of RYBAT.
+7. Meanhwhile, on the server side, the bot sends the user's question to the Text Analytics service to extract its key phrases.
+8. The extracted key phrases are used to construct a search query, which is then sent to the JFK Files back-end, which is an Azure Search instance.
+9. The bot builds a card for each matching document returned by Azure Search and sends these to the Web Chat client.
+10. The client displays the cards in a carousel, allowing the user to flip through the search results.
+11. The client sends the text associated with the cards to the Speech service to turn it into Hoover-speech, then plays the generated audio file.
+
+
+## Creating the bot
 
 The Hoover bot is based on the `EchoBot` template. The EchoBot simply echoes back whatever you type or say to it, along with a turn counter. We'll use only the skeleton of this bot; the guts will be replaced with code for cryptonym identification and document search. We'll add a customized Web app that includes our own CSS styles and images. Finally, we'll use custom speech and voice services to enable the bot to understand the user's spoken queries and respond using a facsimile of J. Edgar Hoover's voice.
 

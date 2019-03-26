@@ -46,7 +46,7 @@ namespace Microsoft.BotBuilderSamples
         private static readonly string Hello = "Hello! Good to meet you. What are you interested in today?";
         private static readonly string YoureWelcome = "You're most welcome. How can I assist you?";
 
-        // stopwords (words that are never used in a search query even if used in a user's question)
+        // stopwords (words that are never used in a search query even if present in a user's question)
         private static string stopwords = "what who whom which what when how was does this that the mean means meaning cryptonym crypt code name word codename codeword";
         private static HashSet<string> stopset;
 
@@ -139,9 +139,7 @@ namespace Microsoft.BotBuilderSamples
 
             var type = activity.Type;
 
-            // Add bot's ID to greeted set so we don't greet it
-            // It's a HashSet so there's no harm doing it each time
-            greeted.Add(activity.Recipient.Id);
+            logger.LogTrace($"HOOVERBOT {turnid} received {type} from {activity.From.Id}");
 
             // Send initial greeting on ConversationUpdate activity
             if (type == ActivityTypes.ConversationUpdate)
@@ -440,18 +438,19 @@ namespace Microsoft.BotBuilderSamples
 
         // Send initial greeting
         // Each user in the chat (including the bot) is added via a ConversationUpdate message.
-        // Check each user to make sure it's not the bot before greeting, and only greet each user once
+        // Greet only once per conversation (appropriate for Web Chat, might not be good for other channels)
         private async void SendInitialGreeting()
         {
             if (activity.MembersAdded != null)
             {
                 foreach (var member in activity.MembersAdded)
                 {
-                    if (!greeted.Contains(member.Id))
+                    if (member.Id != activity.Recipient.Id && !greeted.Contains(activity.Conversation.Id))
                     {
                         SendTextOnlyReply(Greeting);
-                        greeted.Add(member.Id);
+                        greeted.Add(activity.Conversation.Id);
                         logger.LogTrace($"HOOVERBOT {turnid} greeted user: {member.Name} {member.Id}");
+                        break;
                     }
                 }
             }

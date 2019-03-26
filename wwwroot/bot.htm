@@ -70,6 +70,10 @@
         const keyword = "Mr. Hoover";
         const kwrx = RegExp("^" + keyword.replace(".", "\\.") + "[ ,]+");
 
+        const greeting = "Welcome to The JFK Files, I'm J. Edgar Hoover.";
+        const useragent = "HooverBot";
+        const audioformat = "audio-16khz-32kbitrate-mono-mp3";
+
         const connection = window.WebChat.createDirectLine({
             token: botSecret,
         });
@@ -156,7 +160,7 @@
                 document.getElementById("title").innerHTML += '<br><small>Address spoken requests to "' + keyword + '."</small>';
                 say = speak;
                 speechRecognizer.startContinuousRecognitionAsync();
-                if (!greeted) say("Welcome to The JFK Files, I'm J. Edgar Hoover.");
+                if (!greeted) say(greeting);
                 greeted = true;
             } else {
                 speechRecognizer.stopContinuousRecognitionAsync();
@@ -199,8 +203,8 @@
                 req.onload = function () {
                     // invalidate the token in 9 min. we could actually refresh it at that time,
                     // but if we're not speaking then, it would be unnecessary network access
-                    setTimeout(_ => token = null, 9 * 60 * 1000);   
-                    token = req.response;
+                    setTimeout(_ => token = null, 9 * 60 * 1000);
+                    token = "Bearer " + req.responseText;
                     enqueue();
                 }
                 req.send();
@@ -217,23 +221,26 @@
                 req.responseType = "blob";
                 req.open("POST", speechSynthesisEndpoint, true);
                 req.setRequestHeader("Authorization", token);
-                req.setRequestHeader("Content-type", "text/plain");     // we're not using SSML
+                req.setRequestHeader("Content-type", "text/plain");
+                req.setRequestHeader("User-Agent", useragent);
                 // we can't play until we've received tho whole file, so use the smallest file size possible
-                req.setRequestHeader("X-Microsoft-OutputFormat", "audio-16khz-32kbitrate-mono-mp3");
+                req.setRequestHeader("X-Microsoft-OutputFormat", audioformat);
                 req.onload = (function () {
-                    var bloburl = URL.createObjectURL(req.response);
-                    var player = new Audio();
-                    player.autoplay = false;
-                    player.src = bloburl;
-                    player.onended = function () {
-                        playlist.shift();
-                        playnext();
+                    if (req.status === 200) {
+                        var bloburl = URL.createObjectURL(req.response);
+                        var player = new Audio();
+                        player.autoplay = false;
+                        player.src = bloburl;
+                        player.onended = function () {
+                            playlist.shift();
+                            playnext();
+                        }
+                        if (cacheable === true) audcache[text] = player;
+                        playlist.push(player);
+                        startplaying();
+                        requests.shift();
+                        nextreq();
                     }
-                    if (cacheable === true) audcache[text] = player;
-                    playlist.push(player);
-                    startplaying();
-                    requests.shift();
-                    nextreq();
                 });
                 requests.push(_ => req.send(text));
                 if (!loading) nextreq();

@@ -134,7 +134,7 @@ To create the bot on Azure:
 
 1. Copy the files from this repo's `wwwroot` folder into the Visual Studio project's `wwwroot` folder. These files contain the bot's user interface and client-side logic. Again, allow same-named files to replace existing files.
 
-1. Make sure the project builds and runs. Use **Build > Rebuild Solution** for your first build to make sure no traces of the original EchoWithCounterBot remain.
+1. Make sure the project builds and runs. Use **Build > Rebuild Solution** for your first build to make sure no traces of the original EchoWithCounterBot code remain.
 
 1. With the project running, try your bot in the [emulator](https://docs.microsoft.com/en-us/azure/bot-service/bot-service-debug-emulator?view=azure-bot-service-4.0). Just double-click the `.bot` file in Visual Studio.
 
@@ -337,13 +337,13 @@ The bot's server-side logic is in `EchoWithCounterBot.cs`. Here are some high po
 
 Client-side, you'll find all our logic in `bot.htm`. This document is included into the main Hoover Bot page `default.htm` using an HTML `<iframe>` tag. In `bot.htm`, you'll also find CSS rules for styling the chat (including one to remove the Upload button, which we don't use) and HTML and JavaScript code. Here's an overview.
 
-* We generate a unique user ID using `Date.now()`, which is milliseconds since January 1, 1970. Our bot keeps track of the users it has greeted to avoid greeting them more than once, which requires that all Web Chat users have unique names. This time-based name is plenty unique enough for our purposes.
+* We generate a unique user ID using `Date.now()`, which is milliseconds since January 1, 1970. All Web Chat users should have unique names. This time-based name is plenty unique enough for our purposes.
 
 * Similarly, remember how we mentioned that Web Chat doesn't tell the bot a user has joined until that user sends a message? We work around that by manually sending a message. Our "back channel" event message is actually ignored by the server-side code, but it ensures that Web Chat fully initializes the chat and sends a `ConversationUpdate` to the bot, so it can then respond with a greeting.
 
 * You'll notice that when defined the `user` and `bot` objects, which represent the two user accounts in our Web Chat, we made sure to assigne the correct `role` to each. This ensures that when we send a speech-derived question to the bot, that message is right-justified in the chat window just as though the user had typed it.
 
-* We create a Direct Line connection and render the Web Chat interface pretty much exactly as you'll see it in other Bot Framework tutorials. However, we also subscribe to events that have a `speak` attribute so we can speak the bot's responses aloud. Server-side, we always set a `speak` attribute on messages that we want to be spoken if the user has turned on speech.
+* We create a Direct Line connection and render the Web Chat interface pretty much exactly as you'll see it in Bot Framework tutorials. However, we also subscribe to events that have a `speak` attribute so we can speak the bot's responses aloud. Server-side, we always set a `speak` attribute on messages that we want to be spoken if the user has turned on speech.
 
 Speaking of speech, as previously mentioned, the Web Chat app supports the Speech Service, but it does not yet support custom speech and voice models. To integrate custom speech with the Web app, then, we have used the following approaches.
 
@@ -363,13 +363,13 @@ The first troubleshooting step is always to double-check the keys and endpoints 
 
 ### Q: I can't get my bot to work with the Bot Framework Emulator (it can't connect).
 
-A: Make sure the Visual Studio HooverBot project is running and that you are connecting by opening the project's `.bot` file in the Emulator.
+A: Make sure the Visual Studio bot project is running and that you are connecting by opening the project's `.bot` file in the Emulator.
 
-The Emulator's network connection may also be blocked by the Windows firewall. You can add a rule to allow connections to port 3978 (the default bot connection port).
+The Emulator's network connection may be blocked by the Windows firewall. You can add a rule to allow connections to port 3978 (the default bot connection port).
 
 ### Q: While opening Web Chat in a browser from the local `default.htm` page and attempting to use speech, the browser frequently asks for permission to use the microphone.
 
-A: The Web Chat app turns speech recognition off and on while the bot is speaking, and also turns it off after no speech has been detected for twenty seconds. For locally-hosted files, this may cause you to be prompted repeatedly for permission to use the microphone. This behavior is a security precaution, and most browsers don't have a way to turn the warning off for locally-hosted files. Instead, while the bot is running locally (press F5 in Visual Studio), access the page through `http://localhost:3839` using Chrome. Chrome will retain the microphone permission for the session.
+A: The Web Chat app turns speech recognition off while the bot is speaking, and also turns it off after no speech has been detected for twenty seconds. For locally-hosted files, this may cause you to be prompted for permission to use the microphone each time the microphone is re-enabled. This behavior is a security precaution, and most browsers don't have a way to turn the warning off for locally-hosted files. Instead, while the bot is running locally (press F5 in Visual Studio), access the page through `http://localhost:3839` using Chrome. Chrome will retain the microphone permission for the session.
 
 ### Q: I don't hear any responses in Hoover's voice while speech is on.
 
@@ -405,7 +405,9 @@ A: This can happen after you restart the bot or publish a new version from Visua
 
 ### Q: I'm running the bot in Visual Studio, but the bot's behavior doesn't reflect the changes I have made recently to the source code.
 
-A: The Web Chat launched by the build process uses the version of the bot running in the Azure cloud. Use the Bot Framework Emulator to test the local bot, or else publish the project if you want to test it in a browser.
+A: The Web Chat launched by the build process uses the version of the bot running in the Azure cloud. Use the Bot Framework Emulator to test the local bot, or else publish the project.
+
+If the problem persists, try doing a full rebuild in Visual Studio (**Build** > **Rebuild Solution** from the Visual Studio menu bar).
 
 ### Q: What are `CounterState.cs` and `EchoBotAccessors.cs` used for?
 
@@ -413,10 +415,10 @@ Q: In the Hoover Bot, nothing. These files are left over from the `EchoBot` samp
 
 ### Q: How do I upgrade the Bot and Speech libraries?
 
-A: For the server-side C# application, NuGet has you covered. 
+A: For the server-side C# application, use NuGet to update your libraries. 
 
-The Bot Framework JavaScript library is delivered by a CDN. Simply change the version number in the `<script>` tag's URL to the one you want, or `latest` to use the latest version. (You can also use `master` to try the latest pre-release version.)
+The Bot Framework JavaScript library is delivered by a CDN and always uses the latest publicly-available release. (You can replace `latest` with `master` in the `<script>` tag's URL to try the latest pre-release version.)
 
 The Speech Service JavaScript library is provided as part of this project and served from the same Azure Web site that hosts the bot. [Download the latest version](https://aka.ms/csspeech/jsbrowserpackage) and copy `microsoft.cognitiveservices.speech.sdk.bundle-min.js` from the zip file into the Visual Studio project's `wwwroot` folder.
 
-Using newer libraries may require changes to the C# or JavaScript code.
+Updating client libraries may require minor changes to the C# or JavaScript code.

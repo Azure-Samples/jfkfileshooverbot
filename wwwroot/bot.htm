@@ -1,30 +1,36 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta charset="utf-8">
     <meta name="robots" content="noindex">
     <script src="settings.js" type="text/javascript"></script>
     <style type="text/css">
+
+
+        div {
+            color: #000;
+            font-family: Calibri, "Helvetica Neue", Arial, sans-serif;
+        }
         
-        /* make chat window fill frame */
-        div#webchat > div{
+        div#webchat > div {
             position: absolute;
             top: 50px;
             right: 0px;
-            bottom: 0px;
             left: 0px;
+            height: 550px;
         }
 
         div#titlebar {
             position: absolute;
             top: 0px;
             right: 0px;
-            bottom: 550px;
             left: 0px;
+            height: 50px;
             background: #CCC;
-            color: #000;
-            font-family: Calibri, "Helvetica Neue", Arial, sans-serif;
         }
 
         div#title {
@@ -43,12 +49,6 @@
             right: 0px;
         }
 
-        /* don't display upload file button */
-        /* WebChat has an option to turn this off, but it doesn't seem to work */
-        div .main > div:first-child {
-            display: none;
-        }
-
         /* use pointer cursor over linked images */
         div[role="button"] > img, label {cursor: pointer;}
 
@@ -61,7 +61,7 @@
     </div>
 
     <div id="webchat" role="main"></div>
-    <script src="https://cdn.botframework.com/botframework-webchat/4.2.0/webchat.js"></script>
+    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
     <script src="microsoft.cognitiveservices.speech.sdk.bundle-min.js"></script>
     <script>
         const user = { id: "u" + Date.now(), name: "User", role: "user" };
@@ -69,6 +69,10 @@
 
         const keyword = "Mr. Hoover";
         const kwrx = RegExp("^" + keyword.replace(".", "\\.") + "[ ,]+");
+
+        const greeting = "Welcome to The JFK Files, I'm J. Edgar Hoover.";
+        const useragent = "HooverBot";
+        const audioformat = "audio-16khz-32kbitrate-mono-mp3";
 
         const connection = window.WebChat.createDirectLine({
             token: botSecret,
@@ -80,13 +84,16 @@
             bot: bot,
             directLine: connection,
             user: user,
+            styleOptions: {
+                hideUploadButton: true
+            },
             sendTimeout: 60000, // ms
         }, webchat);
-  
+
         // subscribe to messages so we can speak them
         connection.activity$
             .filter(activity => activity.type === "message" && activity.speak)
-            .subscribe(activity => say(activity.speak, activity["cache-speech"]));
+            .subscribe(activity => say(activity.speak, activity["cache-speech"] || false));
 
         // Web Chat only sends ConversationUpdate after the first message is sent.
         // So this event is only sent to force ConversationUpdate to be set. (Our bot doesn't do anything with it)
@@ -96,12 +103,11 @@
             text: 'greetings',
             value: 'greetings',
             from: user,
-         // membersAdded: [user],
         }).subscribe();
 
         // keep input focused inside the bot entry field
         const field = document.forms[0][0];
-        const focus = _ => (window.getSelection().type != "Range") && (field.focus() && window.getSelection().empty());
+        const focus = _ => (window.getSelection().type !== "Range") && (field.focus() && window.getSelection().empty());
         focus();
         // focusing periodically turns out to be the most robust method of keeping the input field focused
         setInterval(focus, 250);
@@ -120,7 +126,7 @@
             window.getSelection().empty();
             if (element.checked) {
                 unlockAudio();
-                if (speechRecognizer == null) {
+                if (speechRecognizer === null) {
                     var audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
                     speechConfig = SpeechSDK.SpeechConfig.fromEndpoint(new URL(speechRecognitionEndpoint), speechKey);
                     speechRecognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
@@ -154,7 +160,7 @@
                 document.getElementById("title").innerHTML += '<br><small>Address spoken requests to "' + keyword + '."</small>';
                 say = speak;
                 speechRecognizer.startContinuousRecognitionAsync();
-                if (!greeted) say("Welcome to The JFK Files, I'm J. Edgar Hoover.");
+                if (!greeted) say(greeting);
                 greeted = true;
             } else {
                 speechRecognizer.stopContinuousRecognitionAsync();
@@ -197,8 +203,8 @@
                 req.onload = function () {
                     // invalidate the token in 9 min. we could actually refresh it at that time,
                     // but if we're not speaking then, it would be unnecessary network access
-                    setTimeout(_ => token = null, 9 * 60 * 1000);   
-                    token = req.response;
+                    setTimeout(_ => token = null, 9 * 60 * 1000);
+                    token = "Bearer " + req.responseText;
                     enqueue();
                 }
                 req.send();
@@ -215,23 +221,26 @@
                 req.responseType = "blob";
                 req.open("POST", speechSynthesisEndpoint, true);
                 req.setRequestHeader("Authorization", token);
-                req.setRequestHeader("Content-type", "text/plain");     // we're not using SSML
+                req.setRequestHeader("Content-type", "text/plain");
+                req.setRequestHeader("User-Agent", useragent);
                 // we can't play until we've received tho whole file, so use the smallest file size possible
-                req.setRequestHeader("X-Microsoft-OutputFormat", "audio-16khz-32kbitrate-mono-mp3");
+                req.setRequestHeader("X-Microsoft-OutputFormat", audioformat);
                 req.onload = (function () {
-                    var bloburl = URL.createObjectURL(req.response);
-                    var player = new Audio();
-                    player.autoplay = false;
-                    player.src = bloburl;
-                    player.onended = function () {
-                        playlist.shift();
-                        playnext();
+                    if (req.status === 200) {
+                        var bloburl = URL.createObjectURL(req.response);
+                        var player = new Audio();
+                        player.autoplay = false;
+                        player.src = bloburl;
+                        player.onended = function () {
+                            playlist.shift();
+                            playnext();
+                        }
+                        if (cacheable === true) audcache[text] = player;
+                        playlist.push(player);
+                        startplaying();
+                        requests.shift();
+                        nextreq();
                     }
-                    if (cacheable === true) audcache[text] = player;
-                    playlist.push(player);
-                    startplaying();
-                    requests.shift();
-                    nextreq();
                 });
                 requests.push(_ => req.send(text));
                 if (!loading) nextreq();
@@ -245,12 +254,12 @@
                 function playnext() {
                     playlist.length && playlist[0].play();
                     playing = playlist.length > 0;
-                    if (!playing) location.protocol == "https:" && speechRecognizer.startContinuousRecognitionAsync();
+                    if (!playing) location.protocol === "https:" && speechRecognizer.startContinuousRecognitionAsync();
                 }
 
                 function startplaying() {
                     if (!playing) {
-                        greeted && location.protocol == "https:" && speechRecognizer.stopContinuousRecognitionAsync();
+                        greeted && location.protocol === "https:" && speechRecognizer.stopContinuousRecognitionAsync();
                         playnext();
                     }
                 }

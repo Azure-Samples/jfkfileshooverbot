@@ -328,6 +328,7 @@ DM	d m
 DIZTAG	diz tag    
 DI	d i
 DAINOLD	dane old
+cryptonym	crip toe nim
 CITASTE	c i taste
 CIFENCE-4	c i fence four
 CELOTEX-2	see lo tex two

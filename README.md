@@ -14,7 +14,7 @@ Using the same database as the JFK Files, the Hoover Bot lets you ask a bot base
 
 The Hoover Bot is a single-page Web app that works in any modern browser. We've tested it in current versions of Microsoft Edge, Mozilla Firefox, and Google Chrome.
 
-The Hovoer Bot requires a subscription to the following Microsoft Azure Cognitive Services. A trial or regular free-tier subscription is fine.
+The Hoover Bot requires a subscription to the following Microsoft Azure Cognitive Services. A trial or regular free-tier subscription is fine.
 
 * Azure Bot Service: provides the chat-room-like conversational framework.
 * Text Analytics: extracts key phrases from user questions for use in search queries.
@@ -26,17 +26,60 @@ The Hovoer Bot requires a subscription to the following Microsoft Azure Cognitiv
 
 ## Prerequisites
 
-You will need a Microsoft Azure account, along with subscriptions to the Azure Bot Service, the Text Analytics service, and the Speech Service. Trial or free-tier subscriptions to these services are sufficient. Visual Studio 2017 is also requiredm; the free Community Edition is fine.
+You will need a Microsoft Azure account, along with subscriptions to the Azure Bot Service, the Text Analytics service, and the Speech Service. Trial or free-tier subscriptions to these services are sufficient. Visual Studio 2017 is also required; the free Community Edition is fine.
 
 The JFK Files is a separate application with a database backend powered by Azure Search. You can find its repository here.
 
     https://github.com/Microsoft/AzureSearch_JFK_Files
 
-Follow the instructions in the JFK Files repo to create your own instance of the JFK Files. There's a template that will create the necessary Azure services for you. You'll need the URLs for the Azure Search service and the Web Service that were created during setup (you can also obtain these from the Azure portal if you don't catch them in the template result).
+Follow the instructions in the JFK Files repo to create your own instance of the JFK Files. There's a template that will create the necessary Azure services for you. You'll need the URLs for the Azure Search service and the Web Service that were created during setup (you can obtain these from the Azure portal if you don't catch them in the template result).
 
-Note that adding all the documents to the index may take a while. We suggest letting the JFK Files setup process run overnight. Don't worry, you can proceed with the rest of this tutorial while this is in progress. There are a couple of other long-running setup tasks for the custom speech models, and these can run at the same time as the document indexing.
+The Hoover Bot requires that the Cognitive Services enrichment data be stored in the JFK Files database. This is a debugging feature and is not enabled by default. Before initializing your JFK Files instance, edit the file `index.json` in the `JfkWebApiSkills/JfkInitializer` folder in the JFK Files project to add the `enriched` field definition.
 
-## Creating the Bot
+```javascript
+{
+  "fields": [
+    // other fields go here.
+    {
+      "name": "enriched",
+      "type": "Edm.String",
+      "searchable": false,
+      "sortable": false,
+      "filterable": false,
+      "facetable": false
+    }
+  ]
+}
+```
+
+Adding all the JFK Files documents to the index may take a while. We suggest letting the JFK Files initialization process run overnight. You can proceed with the rest of this tutorial whie the JFK Files are being initialized. There are a couple of other long-running setup tasks for the custom speech models, and these can run at the same time as the document indexing.
+
+## Architecture
+
+The Hoover Bot is built using an ordinary client-server architecture. The system consists of two main parts: a C# component that runs in the Azure cloud, and a Web Chat component that runs in the user's browser.
+
+![Hoover Bot architecture](images/architecture.png)
+
+The bot and the Web Chat communicate via the Direct Line protocol. The server-side bot component utilizes the Text Analytics service, while the client-side Web Chat component calls upon the Speech service to perform speech recognition and synthesis.
+
+A typical conversational "turn" (query and response) proceeds as follows. In the following scenario, the user has asked aloud, "Mr. Hoover, what is RYBAT?"
+
+![Example Hoover Bot turn](images/transaction.png)
+
+1. The user speaks to the bot. Audio is accepted by the Web Chat component in the browser.
+2. The Web Chat component sends the speech audio to the Speech service for recognition.
+3. The recognized speech is then sent to the server-side bot component for processing.
+4. The bot recognizes the cryptonym (code word) RYBAT in the user's query and sends back its definition.
+5. The Web Chat component displays the cryptonym definition, and also sends it to the Speech service to be synthesized into speech using a custom voice resembling that of J. Edgar Hoover.
+6. The Web Chat plays the audio definition of RYBAT.
+7. Meanhwhile, on the server side, the bot sends the user's question to the Text Analytics service to extract its key phrases.
+8. The extracted key phrases are used to construct a search query, which is then sent to the JFK Files back-end, which is an Azure Search instance.
+9. The bot builds a card for each matching document returned by Azure Search and sends these to the Web Chat client.
+10. The client displays the cards in a carousel, allowing the user to flip through the search results.
+11. The client sends the text associated with the cards to the Speech service to turn it into Hoover-speech, then plays the generated audio file.
+
+
+## Creating the bot
 
 The Hoover bot is based on the `EchoBot` template. The EchoBot simply echoes back whatever you type or say to it, along with a turn counter. We'll use only the skeleton of this bot; the guts will be replaced with code for cryptonym identification and document search. We'll add a customized Web app that includes our own CSS styles and images. Finally, we'll use custom speech and voice services to enable the bot to understand the user's spoken queries and respond using a facsimile of J. Edgar Hoover's voice.
 
@@ -91,7 +134,9 @@ To create the bot on Azure:
 
 1. Copy the files from this repo's `wwwroot` folder into the Visual Studio project's `wwwroot` folder. These files contain the bot's user interface and client-side logic. Again, allow same-named files to replace existing files.
 
-1. Make sure the project builds and runs. With the project running, try your bot in the [emulator](https://docs.microsoft.com/en-us/azure/bot-service/bot-service-debug-emulator?view=azure-bot-service-4.0). Just double-click the `.bot` file in Visual Studio.
+1. Make sure the project builds and runs. Use **Build > Rebuild Solution** for your first build to make sure no traces of the original EchoWithCounterBot code remain.
+
+1. With the project running, try your bot in the [emulator](https://docs.microsoft.com/en-us/azure/bot-service/bot-service-debug-emulator?view=azure-bot-service-4.0). Just double-click the `.bot` file in Visual Studio.
 
     ![Bot Emulator](images/emulator.png)
 
@@ -103,7 +148,7 @@ Running the project also opens the Web Chat app in a browser. This app connects 
 
 Azure Bot Service's Web Chat is a JavaScript component that lets you embed your bot in any Web site. We'll use it in the J. Edgar Hoover Bot Web page. 
 
-To get Web Chat to talk to your bot, you must enable the bot's Direct Line channel and provide an authentication token in the `settings.js` file in the `wwroot` folder.
+To get Web Chat to talk to your bot, you must enable the bot's Direct Line channel and provide an authentication token in the `settings.js` file in the `wwwroot` folder.
 
 1. In the Azure portal, enable Direct Line in your Web App Bot's Channels blade. 
 
@@ -121,7 +166,7 @@ To get Web Chat to talk to your bot, you must enable the bot's Direct Line chann
 
    ![Direct Line keys](images/directline_keys.png)
 
-1. Click **Show** to reveal one of your keys, then copy it and paste it into `settings.js` in place of the placeholder text. 
+1. Click **Show** to reveal one of your keys, then copy it and paste it into `settings.js` (in `wwwroot`) in place of the placeholder text. 
 
     ![bot.htm](images/bot_htm.png)
 
@@ -157,7 +202,7 @@ To make publishing easier the next time, save your deployment password. Click **
 
 ## Adding voice input and output
 
-It is straightforward to add speech recognition and voice repsonse to Web Chat's integration with the Azure Speech Service. However, at this time, this integration does not support custom speech models or voices, both of which we use in our bot.
+It is straightforward to add speech recognition and voice response Web Chat using its integration with the Azure Speech Service. However, at this time, this integration does not support custom speech models or voices, both of which we use in our bot.
 
 * A custom language model helps assure that the bot recognizes the cryptonyms (code names) used for certain persons, programs, and events.
 
@@ -203,23 +248,23 @@ To create your custom voice using this data set:
 
     Enter the name and description as requested, then click **Create**.
 
-It takes a momemnt to create the new endpoint. You'll find the URL next to the endpoint on the Endpoints page. Take note of it; we'll need it in the Hoover bot Web app.
+It takes a moment to create the new endpoint. You'll find the URL next to the endpoint on the Endpoints page. Take note of it; we'll need it in the Hoover bot Web app.
 
 For full details on the uploading and training process, see [Creating custom voice fonts](https://docs.microsoft.com/azure/cognitive-services/speech-service/how-to-customize-voice-font).
 
 ### Customizing Speech Recognition
 
-The JFK assassination documents include a number of terms not found in everyday English. Chief among these are the cryptonyms (code names) representing various persons, operations, locations, events, and even categories of secrecy. The cryptonym for Lee harvey Oswald, for example, is GPLOOR. It's important that when the user speaks "g p floor" that it's recognized as the cryptonym GPFLOOR so that it can be successfully used in a query. This can be done by customizing the *pronunciation model* of the speech-to-text function of the Speech service.
+The JFK assassination documents include a number of terms not found in everyday English. Chief among these are the cryptonyms (code names) representing various persons, operations, locations, events, and even categories of secrecy. The cryptonym for Lee Harvey Oswald, for example, is GPLOOR. It's important that when the user speaks "g p floor" that it's recognized as the cryptonym GPFLOOR so that it can be successfully used in a query. This can be done by customizing the *pronunciation model* of the speech-to-text function of the Speech service.
 
-The pronunciation data to be submitted to the Custom Speech portal is a simple UTF-8 or ASCII text file containing the "dislpay form" of the term ("GPFLOOR" in this case), a tab character (code point 9), and the pronunciation of the term (here, "g p floor").
+The pronunciation data to be submitted to the Custom Speech portal is a simple UTF-8 or ASCII text file containing the "display form" of the term ("GPFLOOR" in this case), a tab character (code point 9), and the pronunciation of the term (here, "g p floor").
 
-There are hundreds of known CIA cryptonyms. Fortunately, the JFK Files search demo includes a list of them, along with a description of each, in the `CryptonymLinker` skill for Cognitive Search. We have converted this list to the format required by the Custom Speech portal, removed the descriptions, and added the pronunciation of each term. The resulting file is included here as `cryptonyms.txt` in the `speech` folder. (Not to be confused with `cryptonyms.json` in the `bot` folder, which contains definitions of each term and is used by the bot's back-end to send back definitions of cryptonyms.)
+There are hundreds of known CIA cryptonyms. Fortunately, the JFK Files search demo includes a list of them, along with a description of each, in the `CryptonymLinker` skill for Cognitive Search. We have converted this list to the format required by the Custom Speech portal, removed the descriptions, and added the pronunciation of each term. The resulting file is included here as `cryptonyms.txt` in the `speech` folder. (Not to be confused with `cryptonyms.json` in the `bot` folder, which contains the definitions for use by the bot's back-end to send back definitions of cryptonyms.)
 
 Some cryptonyms are regular English words, like ZIPPER. There are still included in the pronunciation data because they should appear in their all-uppercase form when recognized. We've also included "JFK," which is not a cryptonym, but should be recognized as a single word.
 
-**TIP** Pronunciations are given priority based on their order in the pronunciation file. To prevent shorter cryptonyms from being recognized prematurely when a cryptomym begins with a prefix that is itself a cryptonym, (e.g. recognizing "GP" instead of "GPFLOOR", then recognizing "floor" sepaately as a regular English word), we sorted the pronunciation file in reverse alphabetical order. This way, GPFLOOR comes before GP, and has priority over GP in recognition.
+**TIP** Pronunciations are given priority based on their order in the pronunciation file. To prevent shorter cryptonyms from being recognized prematurely when a cryptomym begins with a prefix that is itself a cryptonym, (e.g. recognizing "GP" instead of "GPFLOOR", then recognizing "floor" separately as a regular English word), we sorted the pronunciation file in reverse alphabetical order. This way, GPFLOOR comes before GP, and has priority over GP in recognition.
 
-**BTW** Searching The JFK Files for "JFK" is not actually very useful, because nearly every document in the collection, even those related to other individuals, includes a cover page indicating that the document is part of the "JFK Assassination System." In some documents, a notice containing "JFK" appears on *every* page.
+**BTW** Searching the JFK Files for "JFK" is not actually very useful, because nearly every document in the collection, even those related to other individuals, includes a cover page indicating that the document is part of the "JFK Assassination System." In many documents, a notice containing "JFK" appears on *every* page.
 
 Creating a custom language model using the cryptonym pronunciation data also requires language data; you can't train a language model without both files. The language file contains phrases or sentences that are likely to be uttered by a user. The language data is treated as an addition to a base model provided by Microsoft, so it needn't be extensive. We have provided a file, `questions.txt`, consisting of a handful of sample questions that users might ask the Hoover Bot.
 
@@ -229,27 +274,27 @@ With these two files, you're ready to adapt Speech Recognition.
 
 1. Upload `cryptonyms.txt` as a pronunciation data set and `questions.txt` as a language data set to the Adaptation Data page of the Custom Speech portal. Both are in the `speech` folder of this repo.
 
-    First, click **Import** next to Language data sets, fill out the form, and attach `questions.txt`. Click **Import** to proceed.
+    First, click **Import** next to Language Data Sets, fill out the form, and attach `questions.txt`. Click **Import** to proceed.
 
     ![Import language data](images/import_language.png)
 
-    Then click **Import** next to Pronunciation data sets, fill out the form and attach `cryptonyms.txt`. Again cilck **Import** to proceed.
+    Then click **Import** next to Pronunciation Data Sets, fill out the form, and attach `cryptonyms.txt`. Again click **Import** to proceed.
 
     It takes a moment to process the new data sets. Wait until both data sets have a status of Succeeded before continuing.
 
 1. Switch to the Language Models page and click **Create New** to use these data sets to train the speech recognizer. 
  
-    ![Create language model](images/language_model.png)]
+    ![Create language model](images/language_model.png)
 
     Fill out the form as shown, choose the language and pronunciation data sets you just uploaded, and click **Create.**
 
-    Creating the language model can take a significant amount of time; you might want to do it overnight. Itt can run simultaneously with custom voice training and database indexing.
+    Creating the language model can take a significant amount of time; you might want to do it overnight. It can run simultaneously with custom voice training and database indexing.
 
 1. Create an endpoint to be used with the custom speech model by clicking **Create New** on the Endpoints page.
 
     ![Create sppeech endpoint](images/create_speech_endpoint.png)
 
-    Once more, fill out the form, choose the v3.3 Unified acoustic model and the language model you just created, and cilck **Create.**
+    Once more, fill out the form, choose the v3.3 Unified acoustic model and the language model you just created, and click **Create.**
 
     It may take a few moments to deploy the endpoint. When the endpoint's Status on the Endpoints page is Succeeded, click its Details button and scroll down to the Endpoints table to find the WebSockets (`wss://`) URL you need. You want the second one listed, the one thot supports up to 10 minutes of dictation but not punctuation.
 
@@ -267,19 +312,24 @@ For full details on the uploading and training process, see [Enable custom pronu
 
 With the bot open in the browser, you can activate the "Use speech" checkbox. After Hoover's voice greets you, you can ask him questions by addressing him as "Mr. Hoover," for example, "Mr. Hoover, what does GPFLOOR mean?"
 
-The bot's speech recognition is temporarily disabled while the bot is speaking. Rcognition turns off automatically after twenty seconds without detected speech.
+The bot's speech recognition is temporarily disabled while the bot is speaking. Recognition turns off automatically after twenty seconds without detected speech.
 
 ## Technical details
 
-The entirety of the bot's server-side logic is in `EchoWithCounterBot.cs`. Here are some high points.
+The bot's server-side logic is in `EchoWithCounterBot.cs`. Here are some high points.
 
 * There are some static constants early on that can be changed to customize the bot's stock responses to greetings and other social niceties, or to change the maximum number of search results displayed.
 
 * Sending the initial greeting ("Hello, fellow investigator!") is more tricky than it might seem at first. When a chat starts, the bot receives a `ConversationUpdate` event for itself joining the chat and another for the user. So one part of a successful greeting strategy is to ignore the bot's event and respond only to the actual user joining the chat. Also, only one instance of the bot is created for all users of the Web Chat, so we must make sure each Web Chat user has their own user ID. On top of all that, Web Chat doesn't send `ConversationUpdate` until the user sends his or her first message, so we need some way to force the chat to begin. (We'll see how we deal with the latter two issues in a bit).
 
-* Requests are processed by the method `OnTurnAsync`. This method handles responses to three kinds of user requests. First, it detects greetings and such, and responds with a canned phrase. Second, it detects cryptonyms in user requests and responds with a definition. Finally, it executes search queries against the JFK Files' Azure Search back-end. (A crytpnym is considered a search query; both the definition and searh results are returned.)
+* Requests are processed by the method `OnTurnAsync`. This method calls upon other methods to respond to four kinds of user requests. 
 
-* To turn the user's question into a suitable keyword query, we use the Text Analytics service. First we extract key phrases, tweaking the results slightly since some detected key phrases don't make good search keywords. Then we extract entities. We don't use the name of the extracted entities directly, but rather use the recognition of an entity as an indication that some part of the user's question is important. Recognized cryptonyms are also included in the keywords.
+    1. It detects users joining the chat and sends an initial greeting message.
+    1. It detects greetings, welcomes, and thank-yous, and responds with a canned phrase.
+    1. It detects cryptonyms in user requests and responds with a definition. 
+    1. It extracts keywords from user requests and executes search queries against the JFK Files' Azure Search back-end.
+
+* To turn the user's question into a suitable keyword query, we use the Text Analytics service. First we extract key phrases, tweaking the results slightly since some detected key phrases don't make good search keywords. Then we extract entities. We don't use the names of the detected entities directly, but rather use the recognition of an entity as an indication that some part of the user's question is important. Recognized cryptonyms are also included in the keywords.
 
 * In the search query code, there's a `do`/`while` loop that sends a typing indicator while the bot is performing the search. Typing indicators are a good way to let the user know the bot is still working on something for them, and is especially useful here since JFK Files queries can take several seconds. AFter the typing message is sent, the Web Chat client displays a "..." animation for three seconds, or until another message is received from the bot. If a search takes longer than three seconds, the disappearance of the typing indicator can lead to the user thinking the bot has stopped responding; they might then be surprised when the bot spits out its results later, seemingly at random. So we continue sending a typing message every two seconds while the search completes, and a final one as we begin preparing the response.
 
@@ -287,13 +337,13 @@ The entirety of the bot's server-side logic is in `EchoWithCounterBot.cs`. Here 
 
 Client-side, you'll find all our logic in `bot.htm`. This document is included into the main Hoover Bot page `default.htm` using an HTML `<iframe>` tag. In `bot.htm`, you'll also find CSS rules for styling the chat (including one to remove the Upload button, which we don't use) and HTML and JavaScript code. Here's an overview.
 
-* We generate a unique user ID using `Date.now()`, which is milliseconds since January 1, 1970. Our bot keeps track of the users it has greeted to avoid greeting them more than once, which requires that all Web Chat users have unique names. This time-based name is plenty unique enough for our purposes.
+* We generate a unique user ID using `Date.now()`, which is milliseconds since January 1, 1970. All Web Chat users should have unique names. This time-based name is plenty unique enough for our purposes.
 
 * Similarly, remember how we mentioned that Web Chat doesn't tell the bot a user has joined until that user sends a message? We work around that by manually sending a message. Our "back channel" event message is actually ignored by the server-side code, but it ensures that Web Chat fully initializes the chat and sends a `ConversationUpdate` to the bot, so it can then respond with a greeting.
 
 * You'll notice that when defined the `user` and `bot` objects, which represent the two user accounts in our Web Chat, we made sure to assigne the correct `role` to each. This ensures that when we send a speech-derived question to the bot, that message is right-justified in the chat window just as though the user had typed it.
 
-* We create a Direct Line connection and render the Web Chat interface pretty much exactly as you'll see it in other Bot Framework tutorials. However, we also subscribe to events that have a `speak` attribute so we can speak the bot's responses aloud. Server-side, we always set a `speak` attribute on messages that we want to be spoken if the user has turned on speech.
+* We create a Direct Line connection and render the Web Chat interface pretty much exactly as you'll see it in Bot Framework tutorials. However, we also subscribe to events that have a `speak` attribute so we can speak the bot's responses aloud. Server-side, we always set a `speak` attribute on messages that we want to be spoken if the user has turned on speech.
 
 Speaking of speech, as previously mentioned, the Web Chat app supports the Speech Service, but it does not yet support custom speech and voice models. To integrate custom speech with the Web app, then, we have used the following approaches.
 
@@ -311,9 +361,15 @@ Speaking of speech, as previously mentioned, the Web Chat app supports the Speec
 
 The first troubleshooting step is always to double-check the keys and endpoints in `appsettings.json` and `settings.js`. The following FAQ offers additional suggestions to various issues you may encounter.
 
+### Q: I can't get my bot to work with the Bot Framework Emulator (it can't connect).
+
+A: Make sure the Visual Studio bot project is running and that you are connecting by opening the project's `.bot` file in the Emulator.
+
+The Emulator's network connection may be blocked by the Windows firewall. You can add a rule to allow connections to port 3978 (the default bot connection port).
+
 ### Q: While opening Web Chat in a browser from the local `default.htm` page and attempting to use speech, the browser frequently asks for permission to use the microphone.
 
-A: The Web Chat app turns speech recognition off and on while the bot is speaking, and also turns it off after no speech has been detected for twenty seconds. For locally-hosted files, this may cause you to be prompted repeatedly for permission to use the microphone. This behavior is a security precaution, and most browsers don't have a way to turn the warning off for locally-hosted files. Instead, while the bot is running locally (press F5 in Visual Studio), access the page through `http://localhost:3839` using Chrome. Chrome will retain the microphone permission for the session.
+A: The Web Chat app turns speech recognition off while the bot is speaking, and also turns it off after no speech has been detected for twenty seconds. For locally-hosted files, this may cause you to be prompted for permission to use the microphone each time the microphone is re-enabled. This behavior is a security precaution, and most browsers don't have a way to turn the warning off for locally-hosted files. Instead, while the bot is running locally (press F5 in Visual Studio), access the page through `http://localhost:3839` using Chrome. Chrome will retain the microphone permission for the session.
 
 ### Q: I don't hear any responses in Hoover's voice while speech is on.
 
@@ -323,7 +379,7 @@ A: Another precaution taken by browser makers to protect users from malicious co
 
 A: Make sure you are prefacing each request with "Mr. Hoover." Make sure your audio quality is good (record yourself saying something using Windows' Voice Recorder app, for example). 
 
-Finally, check the browser's console (press F12 in Chrome or Edge, or Control-Shift-K in Firefox) while toggling speech on. If your browser can't access the microphone, an `NotAllawod` error message or similar appears in the browser console. Make sure your browser's settings grant it access to the microphone.
+Finally, check the browser's console (press F12 in Chrome or Edge, or Control-Shift-K in Firefox) while toggling speech on. If your browser can't access the microphone, a `NotAllowed` error message or similar appears in the browser console. Make sure your browser's settings grant it access to the microphone.
 
 ### Q: The bot doesn't respond, or tells me something seems to have gone wrong.
 
@@ -349,7 +405,9 @@ A: This can happen after you restart the bot or publish a new version from Visua
 
 ### Q: I'm running the bot in Visual Studio, but the bot's behavior doesn't reflect the changes I have made recently to the source code.
 
-A: The Web Chat launched by the build process uses the version of the bot running in the Azure cloud. Use the Bot Framework Emulator to test the local bot, or else publish the project if you want to test it in a browser.
+A: The Web Chat launched by the build process uses the version of the bot running in the Azure cloud. Use the Bot Framework Emulator to test the local bot, or else publish the project.
+
+If the problem persists, try doing a full rebuild in Visual Studio (**Build** > **Rebuild Solution** from the Visual Studio menu bar).
 
 ### Q: What are `CounterState.cs` and `EchoBotAccessors.cs` used for?
 
@@ -357,8 +415,10 @@ Q: In the Hoover Bot, nothing. These files are left over from the `EchoBot` samp
 
 ### Q: How do I upgrade the Bot and Speech libraries?
 
-A: For the server-side C# application, NuGet has you covered. 
+A: For the server-side C# application, use NuGet to update your libraries. 
 
-The Bot Framework JavaScript library is delivered by a CDN. Simply change the version number in the `<script>` tag's URL to the one you want, or `latest` to use the latest version. (You can also use `master` to try the latest pre-release version.)
+The Bot Framework JavaScript library is delivered by a CDN and always uses the latest publicly-available release. (You can replace `latest` with `master` in the `<script>` tag's URL to try the latest pre-release version.)
 
 The Speech Service JavaScript library is provided as part of this project and served from the same Azure Web site that hosts the bot. [Download the latest version](https://aka.ms/csspeech/jsbrowserpackage) and copy `microsoft.cognitiveservices.speech.sdk.bundle-min.js` from the zip file into the Visual Studio project's `wwwroot` folder.
+
+Updating client libraries may require minor changes to the C# or JavaScript code.

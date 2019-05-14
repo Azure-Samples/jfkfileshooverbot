@@ -222,7 +222,6 @@
                 req.open("POST", speechSynthesisEndpoint, true);
                 req.setRequestHeader("Authorization", token);
                 req.setRequestHeader("Content-type", "text/plain");
-                req.setRequestHeader("User-Agent", useragent);
                 // we can't play until we've received tho whole file, so use the smallest file size possible
                 req.setRequestHeader("X-Microsoft-OutputFormat", audioformat);
                 req.onload = (function () {

@@ -1,3 +1,15 @@
+---
+page_type: sample
+languages:
+- csharp
+- html
+- javascript
+products:
+- azure
+description: "The Hoover Bot is a conversational interface to The JFK Files."
+urlFragment: jfk-files-bot
+---
+
 # The Hoover Bot: A Conversational Interface to the JFK Files
 
 The Hoover Bot is a conversational interface to The JFK Files. The JFK Files is a Web app that lets you search a corpus of documents related to the assassination of President John F. Kennedy on November 22, 1963, released by the United States government. Microsoft has presented this technology demonstration, which showcases the power of Azure Cognitive Search, on several occasions.

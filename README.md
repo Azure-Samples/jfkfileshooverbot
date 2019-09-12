@@ -7,7 +7,7 @@ languages:
 products:
 - azure
 description: "The Hoover Bot is a conversational interface to The JFK Files."
-urlFragment: jfk-files-bot
+urlFragment: jfkfileshooverbot
 ---
 
 # The Hoover Bot: A Conversational Interface to the JFK Files

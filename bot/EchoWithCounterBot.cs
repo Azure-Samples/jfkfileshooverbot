@@ -311,7 +311,8 @@ namespace Bot
             // initiate the search
             SearchOptions options = new SearchOptions()
             {
-                Size = MaxResults
+                Size = MaxResults,
+                IncludeTotalCount = true
             };   // get top n results
             var search = searchClient.SearchAsync<SearchDocument>(query, options);
             logger.LogTrace($"HOOVERBOT {turnid} searching JFK Files for derived query: {query}");

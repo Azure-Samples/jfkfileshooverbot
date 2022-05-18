@@ -24,7 +24,7 @@ using Newtonsoft.Json.Linq;
 #pragma warning disable 4014
 #pragma warning disable 1998
 
-namespace Bot
+namespace Microsoft.BotBuilderSamples
 {
     /// <summary>
     /// Represents a bot that processes incoming activities.
@@ -259,8 +259,8 @@ namespace Bot
 
             // do the Text Analytics requests asynchronously so both can proceed at the same time
             logger.LogTrace($"HOOVERBOT {turnid} making Text Analytics requests.");
-            var t_keyphrases = textAnalyticsClient.ExtractKeyPhrasesAsync(question);
-            var t_entities = textAnalyticsClient.RecognizeEntitiesAsync(question);
+            var keyphrases = await textAnalyticsClient.ExtractKeyPhrasesAsync(question);
+            var entities = await textAnalyticsClient.RecognizeEntitiesAsync(question);
             var keyphrases = await t_keyphrases;
             var entities = await t_entities;
             logger.LogTrace($"HOOVERBOT {turnid} received Text Analytics responses.");
@@ -290,7 +290,10 @@ namespace Bot
             foreach (var phrase in keyphrases.Value)
             {
                 logger.LogTrace($"HOOVERBOT {turnid} processing Key Phrase: {phrase}");
-                foreach (var word in phrase.Split()) addTerm(word);
+                foreach (var word in phrase.Split())
+                {
+                    addTerm(word);
+                } 
             }
 
             // we don't directly use the names of recognized entities. instead, we use the term from the user's query that was recognized as an entity.
@@ -299,7 +302,10 @@ namespace Bot
             foreach (var entity in entities.Value)
             {
                 logger.LogTrace($"HOOVERBOT {turnid} processing Entity SubCategory: {entity.SubCategory}");
-                foreach (var word in entity.Text.Split()) addTerm(word);
+                foreach (var word in entity.Text.Split())
+                {
+                    addTerm(word);
+                }
             }
 
             return terms;

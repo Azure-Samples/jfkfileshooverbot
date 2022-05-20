@@ -261,8 +261,6 @@ namespace Microsoft.BotBuilderSamples
             logger.LogTrace($"HOOVERBOT {turnid} making Text Analytics requests.");
             var keyphrases = await textAnalyticsClient.ExtractKeyPhrasesAsync(question);
             var entities = await textAnalyticsClient.RecognizeEntitiesAsync(question);
-            var keyphrases = await t_keyphrases;
-            var entities = await t_entities;
             logger.LogTrace($"HOOVERBOT {turnid} received Text Analytics responses.");
 
             // helper function to process individual words found by Text Analytics, ignoring some

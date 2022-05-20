@@ -9,10 +9,10 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AdaptiveCards;
-using Microsoft.Azure.CognitiveServices.Language.TextAnalytics;
-using Microsoft.Azure.CognitiveServices.Language.TextAnalytics.Models;
-using Microsoft.Azure.Search;
-using Microsoft.Azure.Search.Models;
+using Azure;
+using Azure.AI.TextAnalytics;
+using Azure.Search.Documents;
+using Azure.Search.Documents.Models;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Schema;
 using Microsoft.Extensions.Configuration;
@@ -57,8 +57,8 @@ namespace Microsoft.BotBuilderSamples
         private static Dictionary<string, string> cryptonyms;
 
         // client interfaces for Cognitive Services APIs
-        private static ITextAnalyticsClient textAnalyticsClient;
-        private static ISearchIndexClient searchClient;
+        private static TextAnalyticsClient textAnalyticsClient;
+        private static SearchClient searchClient;
 
         // search URL for your main JFK Files site instance
         private static string searchUrl;
@@ -79,16 +79,13 @@ namespace Microsoft.BotBuilderSamples
             var textAnalyticsKey = config.GetSection("textAnalyticsKey")?.Value;
             var textAnalyticsEndpoint = config.GetSection("textAnalyticsEndpoint")?.Value;
 
-            textAnalyticsClient = new TextAnalyticsClient(new ApiKeyServiceClientCredentials(textAnalyticsKey))
-            {
-                Endpoint = config.GetSection("textAnalyticsEndpoint")?.Value,
-            };
+            textAnalyticsClient = new TextAnalyticsClient(new Uri(textAnalyticsEndpoint), new AzureKeyCredential(textAnalyticsKey));
 
-            var searchName = config.GetSection("searchName")?.Value;
+            var searchEndpoint = config.GetSection("searchUrl")?.Value;
             var searchIndex = config.GetSection("searchIndex")?.Value;
             var searchKey = config.GetSection("searchKey")?.Value;
 
-            searchClient = new SearchIndexClient(searchName, searchIndex, new SearchCredentials(searchKey));
+            searchClient = new SearchClient(new Uri(searchEndpoint), searchIndex, new AzureKeyCredential(searchKey));
 
             stopset = new HashSet<string>(stopwords.Split());
             greeted = new HashSet<string>() { "default-user" };
@@ -179,7 +176,7 @@ namespace Microsoft.BotBuilderSamples
                 // Perform Azure search of the JFK Files documents
                 var results = await PerformSearch(query);
 
-                logger.LogTrace($"HOOVERBOT {turnid} received {results.Count} search results");
+                logger.LogTrace($"HOOVERBOT {turnid} received {results.TotalCount} search results");
                 SendTypingIndicator();  // to cover building and sending the response
 
                 // Build a reply with the search results
@@ -259,20 +256,11 @@ namespace Microsoft.BotBuilderSamples
         // Both Key Phrases and Entities are extracted
         private async Task<HashSet<string>> ExtractKeywords(string question, HashSet<string> terms)
         {
-            // use Text Analytics to get key phrases and entities from the question, which will become the search query
-            // we will use the same Text Analytics query for both key words and entities
-            var doc = new MultiLanguageBatchInput(
-                new List<MultiLanguageInput>()
-                {
-                    new MultiLanguageInput("en", "0", question),
-                });
 
             // do the Text Analytics requests asynchronously so both can proceed at the same time
             logger.LogTrace($"HOOVERBOT {turnid} making Text Analytics requests.");
-            var t_keyphrases = textAnalyticsClient.KeyPhrasesAsync(doc);
-            var t_entities = textAnalyticsClient.EntitiesAsync(doc);
-            var keyphrases = await t_keyphrases;
-            var entities = await t_entities;
+            var keyphrases = await textAnalyticsClient.ExtractKeyPhrasesAsync(question);
+            var entities = await textAnalyticsClient.RecognizeEntitiesAsync(question);
             logger.LogTrace($"HOOVERBOT {turnid} received Text Analytics responses.");
 
             // helper function to process individual words found by Text Analytics, ignoring some
@@ -297,22 +285,24 @@ namespace Microsoft.BotBuilderSamples
                 }
             }
 
-            foreach (var phrase in keyphrases.Documents[0].KeyPhrases)
+            foreach (var phrase in keyphrases.Value)
             {
                 logger.LogTrace($"HOOVERBOT {turnid} processing Key Phrase: {phrase}");
-                foreach (var word in phrase.Split()) addTerm(word);
+                foreach (var word in phrase.Split())
+                {
+                    addTerm(word);
+                } 
             }
 
             // we don't directly use the names of recognized entities. instead, we use the term from the user's query that was recognized as an entity.
             // that is, if they entered Oswald, the recognized entiity is Lee Harvey Oswald, but we add the user's term, JFK, to the query.
             // in other words, certain words beinga recognized as entities simply tells us they're important to search for, but we still search for what the user entered.
-            foreach (var entity in entities.Documents[0].Entities)
+            foreach (var entity in entities.Value)
             {
-                logger.LogTrace($"HOOVERBOT {turnid} processing Entity: {entity.Name}");
-                foreach (var match in entity.Matches)
+                logger.LogTrace($"HOOVERBOT {turnid} processing Entity SubCategory: {entity.SubCategory}");
+                foreach (var word in entity.Text.Split())
                 {
-                    logger.LogTrace($"HOOVERBOT {turnid} Entity {entity.Name} derived from: {match.Text}");
-                    foreach (var word in match.Text.Split()) addTerm(word);
+                    addTerm(word);
                 }
             }
 
@@ -320,11 +310,15 @@ namespace Microsoft.BotBuilderSamples
         }
 
         // Perform a search (send a typing indicator every 2 seconds while waiting for results)
-        private async Task<IList<SearchResult>> PerformSearch(string query)
+        private async Task<SearchResults<SearchDocument>> PerformSearch(string query)
         {
             // initiate the search
-            var parameters = new SearchParameters() { Top = MaxResults };   // get top n results
-            var search = searchClient.Documents.SearchAsync(query, parameters);
+            SearchOptions options = new SearchOptions()
+            {
+                Size = MaxResults,
+                IncludeTotalCount = true
+            };   // get top n results
+            var search = searchClient.SearchAsync<SearchDocument>(query, options);
             logger.LogTrace($"HOOVERBOT {turnid} searching JFK Files for derived query: {query}");
 
             // send typing indicator every 2 sec while we wait for search to complete
@@ -333,19 +327,19 @@ namespace Microsoft.BotBuilderSamples
                 SendTypingIndicator();
             }
             while (!search.Wait(2000));
-
-            return search.Result.Results;
-         }
+            
+            return search.Result.Value;
+        }
 
         // Build a custom carousel reply with a card for each search result
         // The card displays a thumbnail image of the document and a brief text excerpt
-        private Activity BuildResultsReply(IList<SearchResult> results, string query, bool crypt_found)
+        private Activity BuildResultsReply(SearchResults<SearchDocument> results, string query, bool crypt_found)
         {
             // create a reply
             var reply = activity.CreateReply();
             reply.Attachments = new List<Attachment>();
 
-            foreach (var result in results)
+            foreach (var result in results.GetResults())
             {
                 // get enrichment data from search result (and parse the JSON data)
                 var enriched = JObject.Parse((string)result.Document["enriched"]);
